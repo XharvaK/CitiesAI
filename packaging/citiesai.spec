@@ -14,6 +14,7 @@ icon_path = packaging_dir / "assets" / "CitiesAI.ico"
 
 datas = [
     (str(repo / "citiesai" / "gui" / "static"), "citiesai/gui/static"),
+    (str(repo / "pyproject.toml"), "."),
 ]
 hiddenimports = ["cities2_mcp", "cities2_mcp.game_encyclopedia", "cities2_mcp.wiki_corpus"]
 binaries: list = []

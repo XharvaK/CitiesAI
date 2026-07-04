@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .snapshot import pick, pick_group
+from .social_stats import format_social_index, social_index
 
 THRESHOLDS: dict[str, float | int] = {
     "health_low": 55,
@@ -118,13 +119,51 @@ def _water_pressure_issue(snapshot: dict[str, Any], health: float | int | None) 
     if import_month is not None and import_month > 0:
         parts.append(f"importing {int(import_month)} water units/month from outside")
     if health is not None:
-        parts.append(f"Health {health:.0f}")
+        parts.append(f"Health {format_social_index(health)}")
     detail = " · ".join(parts) if parts else "Fresh water demand is not fully met."
 
     return _city_issue(
         "city_water_pressure",
         severity="warn",
         title="Water service under pressure",
+        detail=detail,
+        ask_prompt="How do I fix water shortages and pumping capacity?",
+    )
+
+
+def _water_quality_issue(
+    snapshot: dict[str, Any],
+    health: float | None,
+) -> dict[str, Any] | None:
+    """Detect likely contamination when supply volume is fine but health is poor."""
+    if health is None or health >= THRESHOLDS["health_low"]:
+        return None
+
+    utility = pick_group(snapshot, "UtilityPressureSemantics")
+    water_pressure = str(pick(utility, "WaterPressure", "water_pressure") or "")
+    if water_pressure not in ("ok", "unknown", ""):
+        return None
+
+    water = pick_group(utility, "Water")
+    unfulfilled = _num(pick(water, "UnfulfilledConsumption", "unfulfilled_consumption")) or 0
+    fulfillment = _num(pick(water, "FulfillmentPercent", "fulfillment_percent"))
+    consumption = _num(pick(water, "Consumption", "consumption"))
+
+    supply_ok = unfulfilled <= 0 and (
+        fulfillment is None or fulfillment >= 90 or consumption in (None, 0)
+    )
+    if not supply_ok:
+        return None
+
+    parts = [f"Health {format_social_index(health)}"]
+    if fulfillment is not None:
+        parts.append(f"water fulfillment {fulfillment:.0f}%")
+    detail = " · ".join(parts) + " — supply volume looks fine; pollution or treatment may be the problem."
+
+    return _city_issue(
+        "city_water_quality",
+        severity="warn",
+        title="Possible contaminated water",
         detail=detail,
         ask_prompt="Citizens say the water is contaminated — what should I fix first?",
     )
@@ -179,8 +218,14 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     finance = pick_group(official, "Finance")
     services = pick_group(official, "Services")
 
-    health = _num(pick(social, "Health", "health"))
-    wellbeing = _num(pick(social, "Wellbeing", "wellbeing"))
+    health = social_index(
+        pick(social, "Health", "health"),
+        pick(social, "HealthLevel", "health_level"),
+    )
+    wellbeing = social_index(
+        pick(social, "Wellbeing", "wellbeing"),
+        pick(social, "WellbeingLevel", "wellbeing_level"),
+    )
     homeless = _num(pick(social, "HomelessCount", "homeless_count"))
     moving_away = _num(pick(social, "CitizensMovedAway", "citizens_moved_away"))
 
@@ -218,6 +263,10 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     if water:
         issues.append(water)
 
+    water_quality = _water_quality_issue(snapshot, health)
+    if water_quality:
+        issues.append(water_quality)
+
     sewage = _sewage_pressure_issue(snapshot)
     if sewage:
         issues.append(sewage)
@@ -228,7 +277,7 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                 "city_health_low",
                 severity="warn",
                 title="City health is low",
-                detail=f"Health {health:.0f} — clinics, hospitals, and utilities may need attention.",
+                detail=f"Health {format_social_index(health)} — clinics, hospitals, and utilities may need attention.",
                 ask_prompt="Why is city health low and what services should I add?",
             )
         )
@@ -239,7 +288,7 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                 "city_wellbeing_low",
                 severity="warn",
                 title="Wellbeing is low",
-                detail=f"Wellbeing {wellbeing:.0f} — services, noise, or pollution may be hurting citizens.",
+                detail=f"Wellbeing {format_social_index(wellbeing)} — services, noise, or pollution may be hurting citizens.",
                 ask_prompt="What is hurting wellbeing in my city?",
             )
         )

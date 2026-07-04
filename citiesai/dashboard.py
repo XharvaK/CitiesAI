@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .snapshot import SnapshotMeta, pick, pick_group
+from .social_stats import social_index
 
 
 def _num(value: Any) -> float | int | None:
@@ -58,8 +59,14 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
         "treasury": pick(finance, "Money", "money"),
         "income": income,
         "expense": expense,
-        "wellbeing": pick(social, "Wellbeing", "wellbeing"),
-        "health": pick(social, "Health", "health"),
+        "wellbeing": social_index(
+            pick(social, "Wellbeing", "wellbeing"),
+            pick(social, "WellbeingLevel", "wellbeing_level"),
+        ),
+        "health": social_index(
+            pick(social, "Health", "health"),
+            pick(social, "HealthLevel", "health_level"),
+        ),
         "crime_rate": pick(social, "CrimeRate", "crime_rate"),
         "educated_percent": pick(education, "EducatedPercent", "educated_percent"),
         "employment_percent": pick(education, "EmploymentRatePercent", "employment_rate_percent"),

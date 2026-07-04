@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterable
 
 from .snapshot import pick, pick_group
+from .social_stats import social_index
 
 STOPWORDS = {
     "a",
@@ -90,8 +91,14 @@ def snapshot_signals(snapshot: dict) -> list[str]:
     if expense > income and expense > 0:
         terms.extend(["budget", "finance", "taxation", "expenses", "income", "loans"])
 
-    wellbeing = pick(social, "Wellbeing", "wellbeing")
-    health = pick(social, "Health", "health")
+    wellbeing = social_index(
+        pick(social, "Wellbeing", "wellbeing"),
+        pick(social, "WellbeingLevel", "wellbeing_level"),
+    )
+    health = social_index(
+        pick(social, "Health", "health"),
+        pick(social, "HealthLevel", "health_level"),
+    )
     crime_rate = pick(social, "CrimeRate", "crime_rate") or 0
     if has_citizens and isinstance(wellbeing, (int, float)) and wellbeing < 50:
         terms.extend(["wellbeing", "happiness", "services", "noise", "pollution"])
