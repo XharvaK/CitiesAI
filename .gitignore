@@ -9,6 +9,8 @@ __pycache__/
 dist/
 build/
 packaging/bundled/CS2DataExport/
+packaging/bundled/feedback_webhook.url
+packaging/secrets.local.env
 
 # Local / machine-specific
 unity-install.log

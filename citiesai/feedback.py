@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import sys
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -13,6 +14,8 @@ from .config import config_dir, load_config
 from .status import collect_status_report
 from .version import __version__
 
+_WEBHOOK_BUNDLE_NAME = "feedback_webhook.url"
+
 
 def feedback_dir() -> Path:
     path = config_dir() / "feedback"
@@ -20,9 +23,39 @@ def feedback_dir() -> Path:
     return path
 
 
+def _read_webhook_file(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        line = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if line.startswith("https://discord.com/api/webhooks/"):
+        return line
+    return None
+
+
+def _bundled_webhook_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / "citiesai" / "bundled" / _WEBHOOK_BUNDLE_NAME)
+        candidates.append(Path(sys.executable).resolve().parent / "bundled" / _WEBHOOK_BUNDLE_NAME)
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates.append(repo_root / "packaging" / "bundled" / _WEBHOOK_BUNDLE_NAME)
+    return candidates
+
+
 def _discord_webhook_url() -> str | None:
     url = os.environ.get("CITIESAI_DISCORD_WEBHOOK", "").strip()
-    return url or None
+    if url:
+        return url
+    for candidate in _bundled_webhook_candidates():
+        url = _read_webhook_file(candidate)
+        if url:
+            return url
+    return None
 
 
 def _system_info() -> dict[str, Any]:
@@ -72,14 +105,19 @@ def submit_feedback(
             "hint": "Discord webhook not configured. Feedback saved locally.",
         }
 
+    fields = [
+        {"name": "Version", "value": __version__, "inline": True},
+        {"name": "Contact", "value": payload["contact"] or "(none)", "inline": True},
+    ]
+    if context_issue_id:
+        fields.append(
+            {"name": "Issue context", "value": context_issue_id[:200], "inline": True}
+        )
     embed = {
         "title": f"CitiesAI feedback: {payload['category']}",
         "description": message[:4000],
         "color": 0xD4842C,
-        "fields": [
-            {"name": "Version", "value": __version__, "inline": True},
-            {"name": "Contact", "value": payload["contact"] or "(none)", "inline": True},
-        ],
+        "fields": fields,
     }
     if attach_system_info:
         embed["fields"].append(

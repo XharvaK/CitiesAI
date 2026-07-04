@@ -28,9 +28,14 @@ datas += _wv_datas
 binaries += _wv_binaries
 hiddenimports += _wv_hidden
 
-bundled_mod = repo / "packaging" / "bundled" / "CS2DataExport"
+bundled_dir = repo / "packaging" / "bundled"
+bundled_mod = bundled_dir / "CS2DataExport"
 if bundled_mod.is_dir():
     datas.append((str(bundled_mod), "citiesai/bundled/CS2DataExport"))
+
+webhook_bundle = bundled_dir / "feedback_webhook.url"
+if webhook_bundle.is_file():
+    datas.append((str(webhook_bundle), "citiesai/bundled"))
 
 a = Analysis(
     [str(repo / "citiesai" / "app.py")],

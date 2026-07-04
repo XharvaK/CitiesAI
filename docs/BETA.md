@@ -45,7 +45,9 @@ Your key is stored only in `%APPDATA%\CitiesAI\.env` on your PC.
 
 ## Feedback
 
-Use the in-app **Feedback** tab. Submissions go to the beta Discord channel when configured, and always save a local copy under `%APPDATA%\CitiesAI\feedback\`.
+Use the in-app **Feedback** tab. Submissions go to the beta Discord channel when the maintainer built the installer with a webhook configured. A local copy is always saved under `%APPDATA%\CitiesAI\feedback\`.
+
+Maintainers: [docs/FEEDBACK-DISCORD.md](FEEDBACK-DISCORD.md)
 
 ## Known issues (beta)
 

@@ -25,6 +25,38 @@ Write-Host '== Brand assets ==' -ForegroundColor Cyan
 uv sync --group dev
 uv run python scripts\generate-brand-assets.py
 
+Write-Host '== Feedback webhook (optional) ==' -ForegroundColor Cyan
+$BundledDir = Join-Path $RepoRoot 'packaging\bundled'
+$WebhookBundle = Join-Path $BundledDir 'feedback_webhook.url'
+$SecretsFile = Join-Path $RepoRoot 'packaging\secrets.local.env'
+New-Item -ItemType Directory -Force -Path $BundledDir | Out-Null
+
+if (Test-Path -LiteralPath $SecretsFile) {
+    Get-Content -LiteralPath $SecretsFile | ForEach-Object {
+        $line = $_.Trim()
+        if (-not $line -or $line.StartsWith('#')) { return }
+        $eq = $line.IndexOf('=')
+        if ($eq -lt 1) { return }
+        $name = $line.Substring(0, $eq).Trim()
+        $value = $line.Substring($eq + 1).Trim().Trim('"').Trim("'")
+        if ($name) { Set-Item -Path "env:$name" -Value $value }
+    }
+}
+
+$WebhookUrl = $env:CITIESAI_DISCORD_WEBHOOK
+if ($WebhookUrl) {
+    if ($WebhookUrl -notmatch '^https://discord\.com/api/webhooks/') {
+        throw 'CITIESAI_DISCORD_WEBHOOK must start with https://discord.com/api/webhooks/'
+    }
+    Set-Content -LiteralPath $WebhookBundle -Value $WebhookUrl -Encoding utf8 -NoNewline
+    Write-Host "Bundled Discord webhook for release: $WebhookBundle" -ForegroundColor Green
+} elseif (Test-Path -LiteralPath $WebhookBundle) {
+    Write-Host "Keeping existing bundled webhook: $WebhookBundle" -ForegroundColor Green
+} else {
+    Write-Host 'No Discord webhook configured. Feedback will save locally only in shipped builds.' -ForegroundColor Yellow
+    Write-Host 'Copy packaging/secrets.local.env.example to packaging/secrets.local.env and set CITIESAI_DISCORD_WEBHOOK.' -ForegroundColor Yellow
+}
+
 Write-Host '== PyInstaller ==' -ForegroundColor Cyan
 uv pip install pyinstaller
 uv run pyinstaller packaging\citiesai.spec --noconfirm --distpath dist --workpath build\pyinstaller
