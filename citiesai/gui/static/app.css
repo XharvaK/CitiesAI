@@ -458,19 +458,24 @@ a { color: var(--accent-2); }
 
 .ask-composer-row {
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 0.65rem;
 }
 
 .ask-composer-row .composer {
   flex: 1;
   min-width: 0;
+  display: flex;
 }
 
 .ask-send {
   flex-shrink: 0;
   min-width: 5.5rem;
-  padding: 0.7rem 1.15rem;
+  padding: 0 1.15rem;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .ask-header {
@@ -580,6 +585,7 @@ a { color: var(--accent-2); }
   min-height: 2.75rem;
   max-height: 9rem;
   width: 100%;
+  flex: 1;
 }
 
 .composer textarea:focus {
