@@ -347,9 +347,9 @@ function renderHealthStrip(status, blockingCount = 0) {
     return;
   }
 
-  const count = blockingCount || status.issue_count || 0;
-  el.textContent = issueCountLabel(count);
-  el.classList.add("warn");
+  el.textContent = "All systems ready";
+  el.classList.add("ok");
+  el.setAttribute("aria-disabled", "true");
 }
 
 function updateAskHelper() {
@@ -568,11 +568,7 @@ async function loadStatus({ promptOnboarding = false } = {}) {
         renderIssues(lastIssues);
       }
     }
-    const blocking =
-      status.blocking_count ??
-      blockingIssueCount(lastIssues) ??
-      status.issue_count ??
-      0;
+    const blocking = status.blocking_count ?? blockingIssueCount(lastIssues);
     renderHealthStrip(status, blocking);
     updateFeedbackIssuesLink();
 

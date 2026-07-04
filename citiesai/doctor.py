@@ -1,12 +1,30 @@
 from __future__ import annotations
 
 from .config import CitiesAIConfig, config_path, load_config
+from .dashboard import extract_headline_metrics
+from .issues import blocking_issue_count, collect_issues
+from .mod_install import mod_installed
+from .snapshot import load_snapshot_safe, snapshot_meta
 from .status import collect_status_report
 
 
+def _metrics_for_doctor(cfg: CitiesAIConfig) -> dict | None:
+    export_path = cfg.resolved_export_path()
+    if not export_path.is_file():
+        return None
+    snapshot, _err = load_snapshot_safe(export_path)
+    if snapshot is None:
+        return None
+    meta = snapshot_meta(snapshot, path=export_path)
+    return extract_headline_metrics(snapshot, meta)
+
+
 def run_doctor(cfg: CitiesAIConfig | None = None) -> int:
-    report = collect_status_report(cfg)
     cfg = cfg or load_config()
+    report = collect_status_report(cfg)
+    report["mod_installed"] = mod_installed()
+    metrics = _metrics_for_doctor(cfg)
+    blocking = blocking_issue_count(collect_issues(report, metrics))
 
     print("CitiesAI doctor")
     print("===============")
@@ -59,8 +77,8 @@ def run_doctor(cfg: CitiesAIConfig | None = None) -> int:
         print("  hint: free Mistral tier at https://console.mistral.ai (SMS verification)")
     print("")
 
-    if report["issue_count"]:
-        print(f"Result: {report['issue_count']} issue(s) found.")
+    if blocking:
+        print(f"Result: {blocking} issue(s) found.")
         return 1
     print("Result: OK")
     return 0

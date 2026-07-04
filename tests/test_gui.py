@@ -36,6 +36,8 @@ def test_collect_status_report_shape() -> None:
     assert "issues" in report
     assert isinstance(report["issues"], list)
     assert "blocking_count" in report
+    assert report["issue_count"] == report["blocking_count"]
+    assert report["ok"] is (report["blocking_count"] == 0)
 
 
 def test_extract_headline_metrics(vendor_sample: dict) -> None:

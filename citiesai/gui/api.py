@@ -63,8 +63,11 @@ def _status_with_issues() -> dict[str, Any]:
     report = _enriched_status()
     metrics = _metrics_for_status()
     issues = collect_issues(report, metrics)
+    blocking = blocking_issue_count(issues)
     report["issues"] = issues
-    report["blocking_count"] = blocking_issue_count(issues)
+    report["blocking_count"] = blocking
+    report["issue_count"] = blocking
+    report["ok"] = blocking == 0
     return report
 
 

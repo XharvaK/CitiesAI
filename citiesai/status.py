@@ -34,7 +34,7 @@ def collect_status_report(cfg: CitiesAIConfig | None = None) -> dict[str, Any]:
     paths = {
         "game_dir": _path_entry("game_dir", game_dir, must_exist=True),
         "locale_cok": _path_entry("locale_cok", locale_cok, must_exist=True),
-        "export_path": _path_entry("export_path", export_path, must_exist=True),
+        "export_path": _path_entry("export_path", export_path, must_exist=False),
     }
     for entry in paths.values():
         if not entry["ok"]:
