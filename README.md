@@ -1,6 +1,6 @@
 # CitiesAI
 
-**CitiesAI** is a read-only advisor for **Cities: Skylines II**. It reads your live city stats, searches the official wiki and in-game encyclopedia locally, and (optionally) uses **your own** Mistral API key to turn that context into plain-language answers.
+**CitiesAI** is a read-only advisor for **Cities: Skylines II**. It reads your live city stats, searches the official wiki and in-game encyclopedia locally, and (optionally) uses **your own** API key to turn that context into plain-language answers.
 
 No Cursor, no cloud account for CitiesAI itself, and no changes to your save — the app only reads export data while you play.
 
