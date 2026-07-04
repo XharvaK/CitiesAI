@@ -13,6 +13,7 @@ This release fixes the dashboard metrics that were misleading or broken since be
 - **Expense** — now sums all monthly expense categories (loan interest, service upkeep, imports, etc.). Previously only the first category was read, which was almost always zero.
 - **Income** — same fix: totals all income sources instead of residential tax only.
 - **Wellbeing & health** — exported as **0–100 citizen averages** (matches the in-game happiness panel). Previously exported raw population-weighted sums that CitiesAI misread.
+- **City name** — read from `CityConfigurationSystem.cityName` (dashboard no longer shows "Unnamed city" for named saves).
 
 ### CitiesAI app
 
