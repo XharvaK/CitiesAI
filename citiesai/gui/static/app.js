@@ -654,6 +654,42 @@ function saveChatEntry(q, a) {
   }
 }
 
+function processSsePart(part, handlers) {
+  const lines = part.split("\n");
+  let event = "message";
+  let data = "";
+  for (const line of lines) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    if (line.startsWith("data:")) data = line.slice(5).trim();
+  }
+  if (!data) return;
+  let payload;
+  try {
+    payload = JSON.parse(data);
+  } catch {
+    return;
+  }
+  handlers.onEvent(event, payload);
+}
+
+function drainSseBuffer(buffer, handlers) {
+  const parts = buffer.split("\n\n");
+  const remainder = parts.pop() || "";
+  for (const part of parts) {
+    if (part.trim()) processSsePart(part, handlers);
+  }
+  return remainder;
+}
+
+function askFetchSignal(timeoutMs = 180000) {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(new DOMException("The operation timed out.", "TimeoutError")), timeoutMs);
+  return controller.signal;
+}
+
 async function askStream(question) {
   appendBubble("user", escapeHtml(question));
   const assistant = appendBubble("assistant", typingIndicatorHtml());
@@ -661,16 +697,41 @@ async function askStream(question) {
   let streamFailed = false;
   const submitBtn = $("ask-submit");
   const askForm = $("ask-form");
-  const submitLabel = submitBtn.textContent;
+  const submitLabel = submitBtn.textContent || "Send";
   submitBtn.disabled = true;
   submitBtn.textContent = "Sending…";
   askForm.setAttribute("aria-busy", "true");
+
+  const handlers = {
+    onEvent(event, payload) {
+      if (event === "token") {
+        answer += payload.text || "";
+        assistant.innerHTML = renderMarkdown(answer);
+        $("chat-log").scrollTop = $("chat-log").scrollHeight;
+      }
+      if (event === "error") {
+        streamFailed = true;
+        answer = "";
+        const hint = payload.hint ? `<p class="muted small">${escapeHtml(payload.hint)}</p>` : "";
+        assistant.innerHTML = `<span class="muted">${escapeHtml(payload.error || "Ask failed")}</span>${hint}`;
+        if (payload.mode === "bundle" && payload.bundle) {
+          assistant.innerHTML += `<details><summary>Retrieval bundle</summary><pre class="mono-block">${escapeHtml(payload.bundle)}</pre></details>`;
+        }
+      }
+      if (event === "done" && !answer.trim()) {
+        streamFailed = true;
+        assistant.innerHTML =
+          `<span class="muted">No answer returned. Check Settings for your API key or try again.</span>`;
+      }
+    },
+  };
 
   try {
     const response = await fetch("/api/ask/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, use_llm: true }),
+      signal: askFetchSignal(),
     });
     if (!response.ok) {
       let message = "Ask failed";
@@ -683,58 +744,37 @@ async function askStream(question) {
       throw new Error(message);
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+    if (!response.body || typeof response.body.getReader !== "function") {
+      drainSseBuffer(await response.text(), handlers);
+    } else {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() || "";
-      for (const part of parts) {
-        const lines = part.split("\n");
-        let event = "message";
-        let data = "";
-        for (const line of lines) {
-          if (line.startsWith("event:")) event = line.slice(6).trim();
-          if (line.startsWith("data:")) data = line.slice(5).trim();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          buffer = drainSseBuffer(buffer, handlers);
         }
-        if (!data) continue;
-        let payload;
-        try {
-          payload = JSON.parse(data);
-        } catch {
-          continue;
-        }
-        if (event === "token") {
-          answer += payload.text || "";
-          assistant.innerHTML = renderMarkdown(answer);
-          $("chat-log").scrollTop = $("chat-log").scrollHeight;
-        }
-        if (event === "error") {
-          streamFailed = true;
-          answer = "";
-          const hint = payload.hint ? `<p class="muted small">${escapeHtml(payload.hint)}</p>` : "";
-          assistant.innerHTML = `<span class="muted">${escapeHtml(payload.error || "Ask failed")}</span>${hint}`;
-          if (payload.mode === "bundle" && payload.bundle) {
-            assistant.innerHTML += `<details><summary>Retrieval bundle</summary><pre class="mono-block">${escapeHtml(payload.bundle)}</pre></details>`;
-          }
-        }
-        if (event === "done" && !answer.trim()) {
-          streamFailed = true;
-          assistant.innerHTML = `<span class="muted">No answer returned. Check Settings for your API key or try again.</span>`;
+        if (done) {
+          buffer += decoder.decode();
+          drainSseBuffer(buffer, handlers);
+          break;
         }
       }
     }
+
     if (!streamFailed && answer.trim()) {
       saveChatEntry(question, answer);
     }
   } catch (err) {
     streamFailed = true;
-    assistant.innerHTML = `<span class="muted">${escapeHtml(String(err.message || err))}</span>`;
-    throw err;
+    const message =
+      err.name === "TimeoutError"
+        ? "Ask timed out. Check your connection or API key and try again."
+        : String(err.message || err);
+    assistant.innerHTML = `<span class="muted">${escapeHtml(message)}</span>`;
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = submitLabel;
@@ -904,18 +944,23 @@ $("refresh-dashboard").addEventListener("click", loadDashboard);
 
 $("ask-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const q = $("question").value.trim();
+  const input = $("question");
+  const q = input.value.trim();
   if (!q) return;
   const btn = $("ask-submit");
   if (btn.disabled) return;
-  btn.disabled = true;
+
+  input.value = "";
+  autoGrowTextarea(input);
+
   try {
     await askStream(q);
-    $("question").value = "";
-    autoGrowTextarea($("question"));
   } catch (err) {
     toast(String(err.message || err), "err");
-    btn.disabled = false;
+    if (!input.value.trim()) {
+      input.value = q;
+      autoGrowTextarea(input);
+    }
   }
 });
 

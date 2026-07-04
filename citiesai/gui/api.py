@@ -188,6 +188,8 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
         yield _sse_event("done", {"mode": "llm"})
     except RuntimeError as exc:
         yield _sse_event("error", {"error": str(exc), "mode": "bundle", "bundle": bundle})
+    except Exception as exc:  # noqa: BLE001 - surface to SSE client
+        yield _sse_event("error", {"error": str(exc)})
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
