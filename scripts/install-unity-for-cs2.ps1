@@ -13,13 +13,16 @@ $ErrorActionPreference = 'Stop'
 $HubExe = 'C:\Program Files\Unity Hub\Unity Hub.exe'
 $Version = '2022.3.62f2'
 $Changeset = '7670c08855a9'
-$HubEditorRoot = 'C:\Users\Xharv\Unity\Hub\Editor'
+$UserRoot = $env:USERPROFILE
+if (-not $UserRoot) {
+    throw 'USERPROFILE is not set.'
+}
+$HubEditorRoot = Join-Path $UserRoot 'Unity\Hub\Editor'
 $HubEditorPath = Join-Path $HubEditorRoot $Version
 $HubUnityExe = Join-Path $HubEditorPath 'Editor\Unity.exe'
 
 # CS2 appends "\Unity {version}" to the installation directory you set in Options.
-# Set Options -> Modding -> Unity installation directory to: C:\Users\Xharv\Unity\2022.3.62f2
-$Cs2UnityRoot = 'C:\Users\Xharv\Unity\2022.3.62f2'
+$Cs2UnityRoot = Join-Path $UserRoot "Unity\$Version"
 $Cs2ExpectedPath = Join-Path $Cs2UnityRoot "Unity $Version"
 $Cs2UnityExe = Join-Path $Cs2ExpectedPath 'Editor\Unity.exe'
 

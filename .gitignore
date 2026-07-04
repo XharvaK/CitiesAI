@@ -15,6 +15,11 @@ unity-install.log
 unity-releases.txt
 .env
 .env.*
+config.toml
+**/feedback/
+*.pem
+*.p12
+*.pfx
 
 # Editor
 .vscode/
