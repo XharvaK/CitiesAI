@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from citiesai.city_issues import detect_city_issues
 
 
@@ -82,7 +84,8 @@ def test_city_water_quality_when_supply_ok_but_health_low() -> None:
     snap = _base_snapshot(
         OfficialCityStatistics={
             "Finance": {"income": 12000, "expense": 9000},
-            "Social": {"health": 31230, "health_level": 4, "wellbeing": 41225},
+            "PopulationFlow": {"population": 618},
+            "Social": {"health": 30000, "wellbeing": 30000},
         },
         UtilityPressureSemantics={
             "status": "ok",
@@ -100,14 +103,6 @@ def test_city_water_quality_when_supply_ok_but_health_low() -> None:
     assert any(i["id"] == "city_water_quality" for i in issues)
     assert any(i["id"] == "city_health_low" for i in issues)
     assert any(i["id"] == "city_wellbeing_low" for i in issues)
-
-
-def test_social_index_scales_permille_export() -> None:
-    from citiesai.social_stats import social_index
-
-    assert social_index(31230, 4) == 31.23
-    assert social_index(82, 5) == 82.0
-    assert social_index(None, 3) == 60.0
 
 
 def test_collect_issues_includes_city_kind() -> None:

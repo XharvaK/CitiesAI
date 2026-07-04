@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .snapshot import pick, pick_group
-from .social_stats import format_social_index, social_index
+from .social_stats import format_social_index, resident_population, social_index
 
 THRESHOLDS: dict[str, float | int] = {
     "health_low": 55,
@@ -218,13 +218,15 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     finance = pick_group(official, "Finance")
     services = pick_group(official, "Services")
 
+    residents = resident_population(snapshot)
+
     health = social_index(
         pick(social, "Health", "health"),
-        pick(social, "HealthLevel", "health_level"),
+        population=residents,
     )
     wellbeing = social_index(
         pick(social, "Wellbeing", "wellbeing"),
-        pick(social, "WellbeingLevel", "wellbeing_level"),
+        population=residents,
     )
     homeless = _num(pick(social, "HomelessCount", "homeless_count"))
     moving_away = _num(pick(social, "CitizensMovedAway", "citizens_moved_away"))

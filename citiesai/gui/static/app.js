@@ -80,24 +80,35 @@ function toast(message, kind = "") {
   setTimeout(() => el.remove(), 4200);
 }
 
-function formatNum(n) {
+function formatNum(n, options = {}) {
   if (n == null || Number.isNaN(n)) return "n/a";
-  const rounded = Math.round(Number(n));
-  return rounded.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const decimals = options.decimals ?? 0;
+  const rounded = decimals > 0 ? Number(n) : Math.round(Number(n));
+  return rounded.toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
 }
 
-function formatSignedNum(n) {
+function formatSignedNum(n, options = {}) {
   if (n == null || Number.isNaN(n)) return "n/a";
-  const rounded = Math.round(Number(n));
-  const body = Math.abs(rounded).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const decimals = options.decimals ?? 0;
+  const rounded = decimals > 0 ? Number(n) : Math.round(Number(n));
+  const body = Math.abs(rounded).toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
   if (rounded > 0) return `+${body}`;
   if (rounded < 0) return `-${body}`;
   return body;
 }
 
-function formatDelta(delta) {
-  if (delta == null || Number.isNaN(delta) || delta === 0) return "";
-  return formatSignedNum(delta);
+function formatDelta(delta, options = {}) {
+  if (delta == null || Number.isNaN(delta)) return "";
+  const decimals = options.decimals ?? 0;
+  const rounded = decimals > 0 ? Number(delta) : Math.round(Number(delta));
+  if (rounded === 0) return "";
+  return formatSignedNum(rounded, options);
 }
 
 function formatAge(seconds) {
@@ -370,10 +381,10 @@ const METRIC_DEFS = [
   { key: "treasury", label: "Treasury" },
   { key: "income", label: "Income" },
   { key: "expense", label: "Expense" },
-  { key: "health", label: "Health" },
-  { key: "traffic_volume", label: "Traffic" },
+  { key: "health", label: "Health", decimals: 1 },
+  { key: "traffic_volume", label: "Road / transit ratio", decimals: 1 },
   { key: "employment_percent", label: "Employment", suffix: "%" },
-  { key: "wellbeing", label: "Wellbeing" },
+  { key: "wellbeing", label: "Wellbeing", decimals: 1 },
 ];
 
 function renderDashboard(data) {
@@ -410,12 +421,19 @@ function renderDashboard(data) {
   grid.innerHTML = METRIC_DEFS.map((def) => {
     const val = m[def.key];
     const delta = deltas[def.key];
-    const deltaCls = delta > 0 ? "up" : delta < 0 ? "down" : "";
+    const formatOpts = { decimals: def.decimals ?? 0 };
+    const roundedDelta =
+      delta == null || Number.isNaN(delta)
+        ? null
+        : formatOpts.decimals > 0
+          ? Number(delta)
+          : Math.round(Number(delta));
+    const deltaCls = roundedDelta > 0 ? "up" : roundedDelta < 0 ? "down" : "";
     const suffix = def.suffix || "";
     return `<article class="metric-card">
       <div class="metric-label">${def.label}</div>
-      <div class="metric-value">${formatNum(val)}${suffix}</div>
-      <div class="metric-delta ${deltaCls}">${formatDelta(delta)}</div>
+      <div class="metric-value">${formatNum(val, formatOpts)}${suffix}</div>
+      <div class="metric-delta ${deltaCls}">${formatDelta(delta, formatOpts)}</div>
       <svg class="sparkline" viewBox="0 0 160 28" data-key="${def.key}"></svg>
     </article>`;
   }).join("");

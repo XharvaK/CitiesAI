@@ -46,7 +46,7 @@ Requirements
 • Optional: free Mistral API key for AI answers (stats work without it)
 
 Install
-1. Download CitiesAI-Setup-0.1.1.exe (link from Doc / GitHub Releases)
+1. Download CitiesAI-Setup-0.2.0.exe (link from Doc / GitHub Releases)
 2. Run installer — SmartScreen may warn (unsigned beta); More info → Run anyway
 3. Launch CitiesAI → complete onboarding (detect game → install mod → load a city)
 4. Dashboard + Issues refresh ~every 10s while you play

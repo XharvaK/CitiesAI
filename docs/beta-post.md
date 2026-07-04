@@ -50,7 +50,7 @@ If you're interested, comment or DM and I'll send the installer + short setup gu
 
 Thanks for volunteering! Here's the beta pack:
 
-1. Download: `[link to CitiesAI-Setup-0.1.1.exe]`
+1. Download: `[link to CitiesAI-Setup-0.2.0.exe]`
 2. Read: `docs/BETA.md` in the repo (or paste key points)
 3. After install: complete onboarding (or Skip setup) → load a city → try Dashboard + Ask
 4. Report issues via in-app **Feedback** (or ping me on Discord)

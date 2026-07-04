@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .snapshot import SnapshotMeta, pick, pick_group
-from .social_stats import social_index
+from .social_stats import resident_population, social_index
 
 
 def _num(value: Any) -> float | int | None:
@@ -24,6 +24,8 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
     time_block = pick_group(official, "Time")
     finance = pick_group(official, "Finance")
     social = pick_group(official, "Social")
+
+    residents = resident_population(snapshot)
 
     income = _num(pick(finance, "Income", "income"))
     expense = _num(pick(finance, "Expense", "expense"))
@@ -51,7 +53,8 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
         "schema_version": meta.schema_version,
         "buildings": pick(city, "BuildingCount", "building_count"),
         "districts": pick(city, "DistrictCount", "district_count"),
-        "population": pick(population, "TotalPopulation", "total_population"),
+        "population": residents,
+        "population_ecs_total": pick(population, "TotalPopulation", "total_population"),
         "homeless": pick(population, "HomelessPopulation", "homeless_population"),
         "moving_away": pick(population, "MovingAwayPopulation", "moving_away_population"),
         "game_year": pick(time_block, "GameYear", "game_year"),
@@ -61,11 +64,11 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
         "expense": expense,
         "wellbeing": social_index(
             pick(social, "Wellbeing", "wellbeing"),
-            pick(social, "WellbeingLevel", "wellbeing_level"),
+            population=residents,
         ),
         "health": social_index(
             pick(social, "Health", "health"),
-            pick(social, "HealthLevel", "health_level"),
+            population=residents,
         ),
         "crime_rate": pick(social, "CrimeRate", "crime_rate"),
         "educated_percent": pick(education, "EducatedPercent", "educated_percent"),

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .snapshot import SnapshotMeta, pick, pick_group
+from .social_stats import format_social_index, resident_population, social_index
 
 MONEY_FOOTNOTE = "_Amounts are in-game city currency._"
 
@@ -66,7 +67,8 @@ def build_city_brief(snapshot: dict[str, Any], meta: SnapshotMeta) -> str:
     lines.append("## Headline metrics")
     building_count = pick(city, "BuildingCount", "building_count")
     district_count = pick(city, "DistrictCount", "district_count")
-    total_pop = pick(population, "TotalPopulation", "total_population")
+    residents = resident_population(snapshot)
+    total_pop = residents if residents is not None else pick(population, "TotalPopulation", "total_population")
     homeless = pick(population, "HomelessPopulation", "homeless_population")
     moving_away = pick(population, "MovingAwayPopulation", "moving_away_population")
 
@@ -101,13 +103,13 @@ def build_city_brief(snapshot: dict[str, Any], meta: SnapshotMeta) -> str:
         if expense_n > income_n and expense_n > 0:
             lines.append("- signal: expenses exceed income")
 
-    wellbeing = pick(social, "Wellbeing", "wellbeing")
-    health = pick(social, "Health", "health")
+    wellbeing = social_index(pick(social, "Wellbeing", "wellbeing"), population=residents)
+    health = social_index(pick(social, "Health", "health"), population=residents)
     crime_rate = pick(social, "CrimeRate", "crime_rate")
-    if any(v not in (None, 0) for v in (wellbeing, health, crime_rate)):
+    if any(v is not None for v in (wellbeing, health, crime_rate)):
         lines.append(
-            f"- wellbeing: {wellbeing if wellbeing is not None else 'n/a'} | "
-            f"health: {health if health is not None else 'n/a'} | "
+            f"- wellbeing: {format_social_index(wellbeing)} | "
+            f"health: {format_social_index(health)} | "
             f"crime rate: {crime_rate if crime_rate is not None else 'n/a'}"
         )
 
@@ -129,7 +131,7 @@ def build_city_brief(snapshot: dict[str, Any], meta: SnapshotMeta) -> str:
     lines_total = pick(mobility, "LinesTotal", "lines_total")
     if traffic_volume is not None or lines_total is not None:
         lines.append(
-            f"- mobility: traffic volume {traffic_volume if traffic_volume is not None else 'n/a'} | "
+            f"- mobility: road/transit ratio {traffic_volume if traffic_volume is not None else 'n/a'} | "
             f"transit lines {lines_total if lines_total is not None else 'n/a'}"
         )
 

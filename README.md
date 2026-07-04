@@ -36,7 +36,7 @@ The **Issues** tab lists setup problems and **current city pressures** (water, h
 
 ## Install (Windows — recommended)
 
-1. Download **`CitiesAI-Setup-0.1.1.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+1. Download **`CitiesAI-Setup-0.2.0.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
 2. Run the installer (per-user, no admin). SmartScreen may warn on unsigned builds — use **More info → Run anyway** if you trust the source.
 3. Launch **CitiesAI** from the Start menu.
 4. Follow the onboarding wizard:

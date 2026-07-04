@@ -5,7 +5,7 @@ Run after playing a city for 30+ minutes with varied systems (zoning, services, 
 ## Stranger flow (installer beta)
 
 - [ ] Fresh Windows user profile or renamed `%APPDATA%\CitiesAI`
-- [ ] Run `CitiesAI-Setup-0.1.1.exe` (or `uv run citiesai gui` from source)
+- [ ] Run `CitiesAI-Setup-0.2.0.exe` (or `uv run citiesai gui` from source)
 - [ ] Onboarding: detect game → install mod → load city → optional Mistral key
 - [ ] Dashboard shows metrics without reading file paths
 - [ ] Ask returns streaming answer (or bundle with AI off)
