@@ -98,8 +98,8 @@ CitiesAI uses a **bring-your-own-key** model: your key stays on your PC, and onl
 
 ### 2. Create an API key
 
-1. In the Mistral console, open your **workspace** (default workspace is fine).
-2. Go to **API keys** (sidebar or **Settings → API keys**).
+1. In the Mistral console (, open your **workspace** (default workspace is fine).
+2. Go to **API keys** (sidebar or **Settings → API keys**). or: https://console.mistral.ai/home?profile_dialog=api-keys
 3. Click **Create new key** (or **Generate**).
 4. Name it something like `CitiesAI` so you can revoke it later.
 5. **Copy the key immediately** — Mistral usually shows the full secret only once. It looks like a long random string (not your login password).
