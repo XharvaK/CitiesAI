@@ -36,7 +36,7 @@ def test_collect_issues_corrupt_export() -> None:
     assert any(i["id"] == "export_corrupt" for i in issues)
 
 
-def test_collect_issues_stale_export_not_listed_and_signal() -> None:
+def test_collect_issues_stale_export_not_listed() -> None:
     status = {
         "ok": True,
         "issue_count": 0,
@@ -58,11 +58,11 @@ def test_collect_issues_stale_export_not_listed_and_signal() -> None:
     issues = collect_issues(status, metrics)
     ids = {issue["id"] for issue in issues}
     assert "export_stale" not in ids
-    assert "signal_mobility" in ids
+    assert "signal_mobility" not in ids
     assert blocking_issue_count(issues) == 0
 
 
-def test_collect_issues_maps_signal_to_plain_language() -> None:
+def test_collect_issues_ignores_export_quality_signals() -> None:
     issues = collect_issues(
         {
             "ok": True,
@@ -74,9 +74,7 @@ def test_collect_issues_maps_signal_to_plain_language() -> None:
         },
         {"signals": [{"id": "transit", "status": "partial", "note": "raw note"}]},
     )
-    transit = next(i for i in issues if i["id"] == "signal_transit")
-    assert transit["title"] == "Transit coverage unclear"
-    assert "ask_prompt" in transit
+    assert not any(str(issue.get("id", "")).startswith("signal_") for issue in issues)
 
 
 def test_build_ask_suggestions_deficit() -> None:

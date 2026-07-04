@@ -50,6 +50,9 @@ let lastIssues = [];
 let llmConfigured = false;
 let refreshInFlight = false;
 let statusRefreshInFlight = false;
+let lastDashboardData = null;
+let metricModalReturnFocus = null;
+let diagnosticsModalReturnFocus = null;
 
 function $(id) {
   return document.getElementById(id);
@@ -108,7 +111,39 @@ function formatDelta(delta, options = {}) {
   const decimals = options.decimals ?? 0;
   const rounded = decimals > 0 ? Number(delta) : Math.round(Number(delta));
   if (rounded === 0) return "";
-  return formatSignedNum(rounded, options);
+  const signed = formatSignedNum(rounded, options);
+  if (!options.currency || signed === "n/a") return signed;
+  if (signed.startsWith("+")) return `+¢${signed.slice(1)}`;
+  if (signed.startsWith("-")) return `-¢${signed.slice(1)}`;
+  return `¢${signed}`;
+}
+
+function formatMetricValue(val, def) {
+  const formatOpts = { decimals: def.decimals ?? 0 };
+  const formatted = formatNum(val, formatOpts);
+  if (def.currency) {
+    return formatted === "n/a" ? formatted : `¢${formatted}`;
+  }
+  return `${formatted}${def.suffix || ""}`;
+}
+
+function formatHourlyRate(value, options = {}) {
+  if (value == null || Number.isNaN(value)) return "";
+  const decimals = options.decimals ?? 0;
+  const rounded = decimals > 0 ? Number(value) : Math.round(Number(value));
+  if (rounded === 0) return "";
+  const body = Math.abs(rounded).toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  const sign = rounded > 0 ? "+" : rounded < 0 ? "-" : "";
+  const prefix = options.currency ? `${sign}¢` : sign;
+  return `${prefix}${body} /h`;
+}
+
+function hourlyRateClass(value) {
+  if (value == null || Number.isNaN(value) || value === 0) return "";
+  return value > 0 ? "up" : "down";
 }
 
 function formatAge(seconds) {
@@ -138,17 +173,147 @@ function drawSparkline(svg, values) {
   svg.innerHTML = `<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${pts.join(" ")}" />`;
 }
 
+function formatHistoryDuration(seconds) {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 1) return "";
+  if (seconds < 120) return `~${Math.round(seconds)}s`;
+  return `~${Math.round(seconds / 60)} min`;
+}
+
+function drawDetailChart(svg, { timestamps, values, suffix = "" }) {
+  const nums = (values || []).filter((v) => typeof v === "number");
+  if (!svg || nums.length < 2) {
+    if (svg) svg.innerHTML = "";
+    return false;
+  }
+
+  const width = 560;
+  const height = 220;
+  const pad = { top: 16, right: 16, bottom: 28, left: 52 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  const range = max - min || 1;
+
+  const points = nums.map((v, i) => {
+    const x = pad.left + (i / (nums.length - 1)) * plotW;
+    const y = pad.top + plotH - ((v - min) / range) * plotH;
+    return { x, y, v };
+  });
+
+  const yTicks = [min, min + range / 2, max];
+  const yTickLines = yTicks
+    .map((tick) => {
+      const y = pad.top + plotH - ((tick - min) / range) * plotH;
+      const label = `${formatNum(tick, { decimals: suffix === "%" ? 1 : 0 })}${suffix}`;
+      return `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" class="chart-grid" />
+        <text x="${pad.left - 8}" y="${y + 4}" class="chart-axis" text-anchor="end">${label}</text>`;
+    })
+    .join("");
+
+  const ts = timestamps || [];
+  const xLabels = [];
+  if (ts.length >= 2) {
+    const first = ts[0];
+    const last = ts[ts.length - 1];
+    const midIdx = Math.floor((ts.length - 1) / 2);
+    const slots = [
+      { idx: 0, label: formatHistoryDuration(last - first) + " ago" },
+      { idx: midIdx, label: formatHistoryDuration(last - ts[midIdx]) + " ago" },
+      { idx: ts.length - 1, label: "now" },
+    ];
+    for (const slot of slots) {
+      const x = pad.left + (slot.idx / (nums.length - 1)) * plotW;
+      xLabels.push(`<text x="${x}" y="${height - 8}" class="chart-axis" text-anchor="middle">${slot.label}</text>`);
+    }
+  }
+
+  const poly = points.map((p) => `${p.x},${p.y}`).join(" ");
+  const area = `${pad.left},${pad.top + plotH} ${poly} ${pad.left + plotW},${pad.top + plotH}`;
+  const last = points[points.length - 1];
+
+  svg.innerHTML = `
+    ${yTickLines}
+    ${xLabels.join("")}
+    <polygon class="chart-area" points="${area}" />
+    <polyline class="chart-line" fill="none" points="${poly}" />
+    <circle class="chart-dot" cx="${last.x}" cy="${last.y}" r="3.5" />
+  `;
+  return true;
+}
+
+function renderInlineMarkdown(text) {
+  return text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
 function renderMarkdown(text) {
-  let html = text
+  const lines = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/^### (.+)$/gm, "<h4>$1</h4>");
-  html = html.replace(/^## (.+)$/gm, "<h3>$1</h3>");
-  html = html.replace(/^# (.+)$/gm, "<h2>$1</h2>");
-  html = html.replace(/^- (.+)$/gm, "• $1<br>");
-  return html;
+    .replace(/>/g, "&gt;")
+    .split("\n");
+  const out = [];
+  let inOl = false;
+  let inUl = false;
+
+  const closeLists = () => {
+    if (inUl) {
+      out.push("</ul>");
+      inUl = false;
+    }
+    if (inOl) {
+      out.push("</ol>");
+      inOl = false;
+    }
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const olMatch = trimmed.match(/^\d+\.\s*(.*)$/);
+    const ulMatch = trimmed.match(/^-\s+(.*)$/);
+
+    if (olMatch) {
+      const content = olMatch[1].trim();
+      if (!content) {
+        continue;
+      }
+      if (!inOl) {
+        closeLists();
+        out.push("<ol>");
+        inOl = true;
+      }
+      out.push(`<li>${renderInlineMarkdown(content)}</li>`);
+      continue;
+    }
+
+    if (ulMatch) {
+      if (!inUl) {
+        closeLists();
+        out.push("<ul>");
+        inUl = true;
+      }
+      out.push(`<li>${renderInlineMarkdown(ulMatch[1])}</li>`);
+      continue;
+    }
+
+    closeLists();
+    if (/^### (.+)$/.test(trimmed)) {
+      out.push(`<h4>${renderInlineMarkdown(trimmed.replace(/^### /, ""))}</h4>`);
+    } else if (/^## (.+)$/.test(trimmed)) {
+      out.push(`<h3>${renderInlineMarkdown(trimmed.replace(/^## /, ""))}</h3>`);
+    } else if (/^# (.+)$/.test(trimmed)) {
+      out.push(`<h2>${renderInlineMarkdown(trimmed.replace(/^# /, ""))}</h2>`);
+    } else {
+      out.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
+    }
+  }
+
+  closeLists();
+  return out.join("");
 }
 
 function typingIndicatorHtml() {
@@ -377,19 +542,203 @@ function updateAskHelper() {
 }
 
 const METRIC_DEFS = [
-  { key: "population", label: "Population" },
-  { key: "treasury", label: "Treasury" },
-  { key: "income", label: "Income" },
-  { key: "expense", label: "Expense" },
-  { key: "health", label: "Health", decimals: 1 },
-  { key: "traffic_volume", label: "Road / transit ratio", decimals: 1 },
-  { key: "employment_percent", label: "Employment", suffix: "%" },
-  { key: "wellbeing", label: "Wellbeing", decimals: 1 },
+  {
+    key: "population",
+    label: "Population",
+    group: "city",
+    description: "Official resident count (excludes commuters and tourists).",
+    hourlyKey: "population_change_per_hour",
+  },
+  {
+    key: "treasury",
+    label: "Treasury",
+    group: "economy",
+    description: "City cash on hand from official finance statistics.",
+    hourlyKey: "treasury_net_per_hour",
+    hourlyCurrency: true,
+    currency: true,
+  },
+  {
+    key: "income",
+    label: "Income",
+    group: "economy",
+    description: "Total monthly income across all revenue sources.",
+    currency: true,
+  },
+  {
+    key: "expense",
+    label: "Expense",
+    group: "economy",
+    description: "Total monthly spending across all expense sources.",
+    currency: true,
+  },
+  {
+    key: "health",
+    label: "Health",
+    group: "social",
+    decimals: 1,
+    description: "Average citizen health index (0–100).",
+  },
+  {
+    key: "traffic_volume",
+    label: "Road / transit ratio",
+    group: "mobility",
+    decimals: 1,
+    description: "Road vehicles per transit vehicle — not congestion.",
+  },
+  {
+    key: "employment_percent",
+    label: "Employment",
+    group: "social",
+    suffix: "%",
+    description: "Share of working-age citizens with jobs.",
+  },
+  {
+    key: "wellbeing",
+    label: "Wellbeing",
+    group: "social",
+    decimals: 1,
+    description: "Average citizen wellbeing index (0–100).",
+  },
 ];
+
+function metricDefByKey(key) {
+  return METRIC_DEFS.find((def) => def.key === key);
+}
+
+function buildMetricCardHtml(def, m, deltas, series) {
+  const val = m[def.key];
+  const delta = deltas[def.key];
+  const formatOpts = { decimals: def.decimals ?? 0 };
+  const roundedDelta =
+    delta == null || Number.isNaN(delta)
+      ? null
+      : formatOpts.decimals > 0
+        ? Number(delta)
+        : Math.round(Number(delta));
+  const deltaCls = roundedDelta > 0 ? "up" : roundedDelta < 0 ? "down" : "";
+  const historyValues = series[def.key] || [];
+  const hasSparkline = historyValues.filter((v) => typeof v === "number").length >= 2;
+  const deltaOpts = { decimals: def.decimals ?? 0, currency: Boolean(def.currency) };
+
+  let hourlyHtml = "";
+  if (def.hourlyKey) {
+    const hourlyVal = m[def.hourlyKey];
+    const hourlyText = formatHourlyRate(hourlyVal, {
+      decimals: formatOpts.decimals,
+      currency: Boolean(def.hourlyCurrency),
+    });
+    if (hourlyText) {
+      hourlyHtml = `<span class="metric-hourly ${hourlyRateClass(hourlyVal)}">${hourlyText}</span>`;
+    }
+  }
+
+  return `<button type="button" class="metric-card metric-group-${def.group}" data-metric-key="${def.key}" aria-label="View ${def.label} trend">
+    <div class="metric-card-head">
+      <span class="metric-label">${def.label}</span>
+      <span class="metric-trend-hint" aria-hidden="true">›</span>
+    </div>
+    <div class="metric-value-row">
+      <span class="metric-value">${formatMetricValue(val, def)}</span>
+      ${hourlyHtml}
+    </div>
+    <div class="metric-delta ${deltaCls}">${formatDelta(delta, deltaOpts)}</div>
+    <div class="metric-spark-wrap">
+      <svg class="sparkline" viewBox="0 0 160 28" data-key="${def.key}" aria-hidden="true"></svg>
+      ${hasSparkline ? "" : `<span class="sparkline-empty muted small">Collecting…</span>`}
+    </div>
+  </button>`;
+}
+
+function bindMetricCards() {
+  $("metric-grid").querySelectorAll(".metric-card").forEach((card) => {
+    card.addEventListener("click", () => openMetricModal(card.dataset.metricKey, card));
+  });
+}
+
+function openMetricModal(key, returnFocusEl) {
+  const def = metricDefByKey(key);
+  if (!def || !lastDashboardData?.ok) return;
+
+  metricModalReturnFocus = returnFocusEl || null;
+  const m = lastDashboardData.metrics;
+  const history = lastDashboardData.history || {};
+  const series = history.series || {};
+  const deltas = history.deltas || {};
+  const values = series[key] || [];
+  const timestamps = history.timestamps || [];
+  const formatOpts = { decimals: def.decimals ?? 0 };
+  const suffix = def.suffix || "";
+
+  $("metric-modal-title").textContent = def.label;
+  $("metric-modal-desc").textContent = def.description || "";
+
+  let valueRow = `<span class="metric-modal-value">${formatMetricValue(m[def.key], def)}</span>`;
+  if (def.hourlyKey) {
+    const hourlyText = formatHourlyRate(m[def.hourlyKey], {
+      decimals: formatOpts.decimals,
+      currency: Boolean(def.hourlyCurrency || def.currency),
+    });
+    if (hourlyText) {
+      valueRow += `<span class="metric-hourly ${hourlyRateClass(m[def.hourlyKey])}">${hourlyText}</span>`;
+    }
+  }
+  const deltaOpts = { decimals: formatOpts.decimals, currency: Boolean(def.currency) };
+  const deltaText = formatDelta(deltas[key], deltaOpts);
+  if (deltaText) {
+    const deltaCls = deltas[key] > 0 ? "up" : deltas[key] < 0 ? "down" : "";
+    valueRow += `<span class="metric-modal-session-delta ${deltaCls}">${deltaText} since last export</span>`;
+  }
+  $("metric-modal-values").innerHTML = valueRow;
+
+  const chart = $("metric-modal-chart");
+  const drew = drawDetailChart(chart, { timestamps, values, suffix });
+  chart.hidden = !drew;
+
+  const count = history.count ?? 0;
+  const span =
+    timestamps.length >= 2 ? formatHistoryDuration(timestamps[timestamps.length - 1] - timestamps[0]) : "";
+  const metaParts = [`Session history · ${count} point${count === 1 ? "" : "s"}`];
+  if (span) metaParts.push(span);
+  if (!drew) metaParts.push("waiting for more exports");
+  $("metric-modal-meta").textContent = metaParts.join(" · ");
+
+  $("metric-modal").removeAttribute("hidden");
+  $("metric-modal-close").focus();
+}
+
+function closeMetricModal() {
+  const modal = $("metric-modal");
+  if (modal.hasAttribute("hidden")) return;
+  modal.setAttribute("hidden", "");
+  if (metricModalReturnFocus) {
+    metricModalReturnFocus.focus();
+    metricModalReturnFocus = null;
+  }
+}
+
+function openDiagnosticsModal(returnFocusEl) {
+  diagnosticsModalReturnFocus = returnFocusEl || $("open-diagnostics");
+  const brief = lastDashboardData?.brief || "";
+  $("brief-technical").textContent = brief || "No snapshot loaded yet. Load a city in CS2 with the export mod enabled.";
+  $("diagnostics-modal").removeAttribute("hidden");
+  $("diagnostics-modal-close").focus();
+}
+
+function closeDiagnosticsModal() {
+  const modal = $("diagnostics-modal");
+  if (modal.hasAttribute("hidden")) return;
+  modal.setAttribute("hidden", "");
+  if (diagnosticsModalReturnFocus) {
+    diagnosticsModalReturnFocus.focus();
+    diagnosticsModalReturnFocus = null;
+  }
+}
 
 function renderDashboard(data) {
   const grid = $("metric-grid");
   if (!data.ok) {
+    lastDashboardData = data;
     $("hero-title").textContent = "No city data yet";
     $("hero-sub").textContent = data.hint || data.error || "";
     $("freshness-pill").textContent = "No export";
@@ -399,6 +748,7 @@ function renderDashboard(data) {
     return;
   }
 
+  lastDashboardData = data;
   const m = data.metrics;
   const meta = data.meta;
   $("hero-title").textContent = m.city_name || "Your city";
@@ -418,31 +768,18 @@ function renderDashboard(data) {
 
   const deltas = (data.history && data.history.deltas) || {};
   const series = (data.history && data.history.series) || {};
-  grid.innerHTML = METRIC_DEFS.map((def) => {
-    const val = m[def.key];
-    const delta = deltas[def.key];
-    const formatOpts = { decimals: def.decimals ?? 0 };
-    const roundedDelta =
-      delta == null || Number.isNaN(delta)
-        ? null
-        : formatOpts.decimals > 0
-          ? Number(delta)
-          : Math.round(Number(delta));
-    const deltaCls = roundedDelta > 0 ? "up" : roundedDelta < 0 ? "down" : "";
-    const suffix = def.suffix || "";
-    return `<article class="metric-card">
-      <div class="metric-label">${def.label}</div>
-      <div class="metric-value">${formatNum(val, formatOpts)}${suffix}</div>
-      <div class="metric-delta ${deltaCls}">${formatDelta(delta, formatOpts)}</div>
-      <svg class="sparkline" viewBox="0 0 160 28" data-key="${def.key}"></svg>
-    </article>`;
-  }).join("");
+  grid.innerHTML = METRIC_DEFS.map((def) => buildMetricCardHtml(def, m, deltas, series)).join("");
 
   grid.querySelectorAll(".sparkline").forEach((svg) => {
     drawSparkline(svg, series[svg.dataset.key]);
   });
+  bindMetricCards();
 
   $("brief-technical").textContent = data.brief || "";
+
+  if (!$("metric-modal").hasAttribute("hidden") && metricModalReturnFocus) {
+    openMetricModal(metricModalReturnFocus.dataset.metricKey, metricModalReturnFocus);
+  }
 }
 
 function renderIssueCard(issue) {
@@ -458,17 +795,21 @@ function renderIssueCard(issue) {
   actions.push(
     `<button type="button" class="btn ghost btn-sm issue-report" data-category="${escapeAttr(issue.report_category || "general")}" data-title="${escapeAttr(issue.title)}" data-issue-id="${escapeAttr(issue.id)}">Report</button>`
   );
+
   const severityLabel =
     issue.severity === "error" ? "Error" : issue.severity === "warn" ? "Warning" : "Note";
-  const hint = issue.hint ? `<p class="issue-hint muted small">${escapeHtml(issue.hint)}</p>` : "";
+  const hintHtml = issue.hint
+    ? `<p class="issue-hint muted small">${escapeHtml(issue.hint)}</p>`
+    : "";
+
   return `<article class="issue-card severity-${issue.severity}">
     <div class="issue-stripe"></div>
     <div class="issue-body">
       <p class="issue-severity muted small">${severityLabel}</p>
       <h3>${escapeHtml(issue.title)}</h3>
       <p>${escapeHtml(issue.detail)}</p>
-      ${hint}
-      <div class="issue-actions">${actions.join("")}</div>
+      ${hintHtml}
+      ${actions.length ? `<div class="issue-actions">${actions.join("")}</div>` : ""}
     </div>
   </article>`;
 }
@@ -489,12 +830,12 @@ function renderIssues(issues) {
 
   if (cityIssues.length) {
     sections.push(
-      `<div class="issues-section"><h2 class="issues-section-title">Your city</h2>${cityIssues.map(renderIssueCard).join("")}</div>`
+      `<div class="issues-section"><h2 class="issues-section-title">Your city</h2>${cityIssues.map((issue) => renderIssueCard(issue)).join("")}</div>`
     );
   }
   if (setupIssues.length) {
     sections.push(
-      `<div class="issues-section"><h2 class="issues-section-title">Setup &amp; app</h2>${setupIssues.map(renderIssueCard).join("")}</div>`
+      `<div class="issues-section"><h2 class="issues-section-title">Setup &amp; app</h2>${setupIssues.map((issue) => renderIssueCard(issue)).join("")}</div>`
     );
   }
 
@@ -1181,10 +1522,34 @@ $("onboarding-next").addEventListener("click", async () => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  const metricModal = $("metric-modal");
+  if (!metricModal.hasAttribute("hidden")) {
+    closeMetricModal();
+    return;
+  }
+  const diagnosticsModal = $("diagnostics-modal");
+  if (!diagnosticsModal.hasAttribute("hidden")) {
+    closeDiagnosticsModal();
+    return;
+  }
   const onboarding = $("onboarding");
   if (!onboarding.hasAttribute("hidden")) {
     void completeOnboarding();
   }
+});
+
+$("metric-modal-close").addEventListener("click", closeMetricModal);
+$("metric-modal").querySelectorAll("[data-close-metric-modal]").forEach((el) => {
+  el.addEventListener("click", closeMetricModal);
+});
+
+$("diagnostics-modal-close").addEventListener("click", closeDiagnosticsModal);
+$("diagnostics-modal").querySelectorAll("[data-close-diagnostics-modal]").forEach((el) => {
+  el.addEventListener("click", closeDiagnosticsModal);
+});
+
+$("open-diagnostics").addEventListener("click", () => {
+  openDiagnosticsModal($("open-diagnostics"));
 });
 
 async function init() {

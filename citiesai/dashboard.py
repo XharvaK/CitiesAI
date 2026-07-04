@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .city_name import resolve_city_display_name
+from .rates import extract_hourly_rates
 from .snapshot import SnapshotMeta, pick, pick_group
 from .social_stats import resident_population, social_index
 
@@ -29,6 +31,7 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
 
     income = _num(pick(finance, "Income", "income"))
     expense = _num(pick(finance, "Expense", "expense"))
+    hourly = extract_hourly_rates(snapshot)
 
     signals: list[dict[str, str]] = []
     watch_groups: list[tuple[str, dict[str, Any]]] = [
@@ -46,7 +49,7 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
             signals.append({"id": name, "status": str(status), "note": str(note)})
 
     return {
-        "city_name": meta.city_name or "Unnamed city",
+        "city_name": resolve_city_display_name(snapshot, meta),
         "exported_at_utc": meta.exported_at_utc,
         "age_seconds": meta.age_seconds,
         "stale": meta.stale,
@@ -62,6 +65,8 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
         "treasury": pick(finance, "Money", "money"),
         "income": income,
         "expense": expense,
+        "treasury_net_per_hour": hourly["treasury_net_per_hour"],
+        "population_change_per_hour": hourly["population_change_per_hour"],
         "wellbeing": social_index(
             pick(social, "Wellbeing", "wellbeing"),
             population=residents,

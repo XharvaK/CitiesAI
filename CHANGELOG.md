@@ -2,6 +2,52 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.3.0] — 2026-07-04
+
+### Export data quality (mod + advisor)
+
+- **Mobility** — cities with no transit lines no longer report false `partial` status (empty line set is `ok`).
+- **Transit performance & line detail** — `ok` when the city has no transit lines instead of warning cards.
+- **Economy / land value** — reads `Game.Net.LandValue` on each building’s road edge (same path as the in-game land value infoview).
+- **City name** — export falls back to `continue_game.json` when ECS city name is empty; dashboard shows **Fabius** (etc.) instead of “Unnamed city”.
+- **Issues tab** — export `partial` coverage is no longer surfaced as city problems; use **Diagnostics** for export metadata.
+
+### Dashboard & UI
+
+- Redesigned clickable metric cards with detail graphs and CS2-style hourly badges (`+¢…/h`, `+…/h`).
+- **Diagnostics** modal on the dashboard; Settings diagnostics panel removed.
+- Treasury / income / expense show **¢** on cards and graphs.
+- Removed sidebar subtitle “City advisor for CS2”.
+
+### Ask
+
+- Fixed broken numbered-list rendering in AI answers.
+
+### Install
+
+Download **`CitiesAI-Setup-0.3.0.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases). Close CS2 before installing so the bundled export mod can update.
+
+---
+
+## [0.2.1] — 2026-07-04
+
+### Dashboard
+
+- **Redesigned metric cards** — category accents, hover affordance, clickable for detail graphs.
+- **Metric detail modal** — session-history line chart for all eight metrics (including **Employment**, which previously had no graph).
+- **Hourly badges** — Treasury shows CS2-style `+¢… /h`; Population shows `+… /h` from official monthly finance and population-flow stats.
+- **Diagnostics** — “Technical details & paths” moved to **Settings → City snapshot diagnostics**; **Diagnostics** link on the dashboard hero.
+
+### Ask
+
+- **Numbered lists** — fixed broken `1.` / `2.` / `1.` rendering in AI answers (prompt + markdown renderer).
+
+### Install
+
+Download **`CitiesAI-Setup-0.2.1.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+
+---
+
 ## [0.2.0] — 2026-07-04
 
 ### Highlights

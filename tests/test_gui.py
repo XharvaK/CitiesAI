@@ -22,7 +22,7 @@ VENDOR_SAMPLE = (
 
 
 def test_version() -> None:
-    assert __version__ == "0.2.0"
+    assert __version__ == "0.3.0"
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     assert data["project"]["version"] == __version__
@@ -30,7 +30,7 @@ def test_version() -> None:
 
 def test_api_version() -> None:
     data = api_version()
-    assert data["version"] == "0.2.0"
+    assert data["version"] == "0.3.0"
 
 
 def test_collect_status_report_shape() -> None:
@@ -84,10 +84,32 @@ def test_run_ask_no_export(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 def test_snapshot_history_ring() -> None:
     history = SnapshotHistory(max_points=3)
     history._points.append(  # noqa: SLF001
-        type("P", (), {"timestamp": 1.0, "exported_at_utc": "a", "metrics": {"population": 1}})()
+        type(
+            "P",
+            (),
+            {
+                "timestamp": 1.0,
+                "exported_at_utc": "a",
+                "metrics": {"population": 1, "employment_percent": 55},
+            },
+        )()
+    )
+    history._points.append(  # noqa: SLF001
+        type(
+            "P",
+            (),
+            {
+                "timestamp": 2.0,
+                "exported_at_utc": "b",
+                "metrics": {"population": 3, "employment_percent": 58},
+            },
+        )()
     )
     data = history.to_dict()
-    assert data["count"] == 1
+    assert data["count"] == 2
+    assert "employment_percent" in data["series"]
+    assert data["series"]["employment_percent"] == [55, 58]
+    assert data["deltas"]["employment_percent"] == 3
 
 
 def test_save_env_var(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -161,6 +183,9 @@ def test_static_index_contains_title() -> None:
     body = _static_file("index.html")
     assert b"Dashboard" in body
     assert b"Issues" in body
+    assert b"metric-modal" in body
+    assert b"diagnostics-modal" in body
+    assert b"settings-diagnostics" not in body
 
 
 def test_api_setup_preview_keys() -> None:

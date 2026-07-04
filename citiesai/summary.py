@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .city_name import resolve_city_display_name
 from .snapshot import SnapshotMeta, pick, pick_group
 from .social_stats import format_social_index, resident_population, social_index
 
@@ -41,7 +42,7 @@ def _status_line(group: dict[str, Any]) -> str | None:
 
 def build_city_brief(snapshot: dict[str, Any], meta: SnapshotMeta) -> str:
     lines: list[str] = []
-    title = meta.city_name or "(unnamed city)"
+    title = resolve_city_display_name(snapshot, meta)
     lines.append(f"# City brief: {title}")
     lines.append("")
     lines.append("## Snapshot")

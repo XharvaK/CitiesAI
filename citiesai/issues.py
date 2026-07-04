@@ -10,39 +10,6 @@ _PATH_LABELS = {
     "export_path": "Export file",
 }
 
-_SIGNAL_COPY: dict[str, dict[str, str]] = {
-    "housing": {
-        "title": "Housing pressure detected",
-        "detail": "Residential demand or homelessness signals need attention.",
-        "ask_prompt": "What should I do about housing pressure in my city?",
-    },
-    "labor": {
-        "title": "Labor market pressure",
-        "detail": "Jobs, education, or workforce balance may be off.",
-        "ask_prompt": "How can I improve jobs and employment in my city?",
-    },
-    "mobility": {
-        "title": "Limited mobility data",
-        "detail": "Traffic and road usage metrics are partial or incomplete.",
-        "ask_prompt": "How can I improve traffic and road flow in my city?",
-    },
-    "economy": {
-        "title": "Economy data is partial",
-        "detail": "Citizen wealth metrics are estimated from limited household data.",
-        "ask_prompt": "What should I prioritize to strengthen my city's economy?",
-    },
-    "transit": {
-        "title": "Transit coverage unclear",
-        "detail": "No transit line records were exported, so bus and rail advice is limited.",
-        "ask_prompt": "Should I add public transit lines given my current traffic?",
-    },
-    "budget": {
-        "title": "Budget deficit",
-        "detail": "City expenses exceed income.",
-        "ask_prompt": "What should I fix in my budget to stop running a deficit?",
-    },
-}
-
 
 def _issue(
     issue_id: str,
@@ -173,10 +140,8 @@ def collect_issues(
             )
         )
 
-    city_issue_ids: set[str] = set()
     for city_issue in (metrics or {}).get("city_issues") or []:
         if isinstance(city_issue, dict) and city_issue.get("id"):
-            city_issue_ids.add(str(city_issue["id"]))
             issues.append(city_issue)
 
     llm = status.get("llm") or {}
@@ -189,25 +154,6 @@ def collect_issues(
                 detail="Dashboard stats work without an API key.",
                 hint="Add a free Mistral key in Settings for grounded answers.",
                 action_view="settings",
-            )
-        )
-
-    for signal in (metrics or {}).get("signals") or []:
-        signal_id = str(signal.get("id", ""))
-        if signal_id == "budget" and "city_budget_deficit" in city_issue_ids:
-            continue
-        copy = _SIGNAL_COPY.get(signal_id)
-        if not copy:
-            continue
-        issues.append(
-            _issue(
-                f"signal_{signal_id}",
-                severity="warn" if signal_id == "budget" else "info",
-                title=copy["title"],
-                detail=copy["detail"],
-                hint=str(signal.get("note", ""))[:240],
-                ask_prompt=copy["ask_prompt"],
-                report_category="wrong-answer" if signal_id != "budget" else "general",
             )
         )
 

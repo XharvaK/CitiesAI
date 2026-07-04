@@ -17,27 +17,15 @@ THRESHOLDS: dict[str, float | int] = {
 
 _SEMANTIC_PARTIAL_COPY: dict[str, dict[str, str]] = {
     "housing_pressure_semantics": {
-        "title": "Housing data is partial",
+        "title": "Housing data is unavailable",
         "ask_prompt": "What should I do about housing pressure in my city?",
     },
     "labor_pressure_context": {
-        "title": "Labor market data is partial",
+        "title": "Labor market data is unavailable",
         "ask_prompt": "How can I improve jobs and employment in my city?",
     },
-    "mobility": {
-        "title": "Mobility data is partial",
-        "ask_prompt": "How can I improve traffic and road flow in my city?",
-    },
-    "economy_signals": {
-        "title": "Economy data is partial",
-        "ask_prompt": "What should I prioritize to strengthen my city's economy?",
-    },
-    "transit_performance_semantics": {
-        "title": "Transit performance data is partial",
-        "ask_prompt": "Should I add public transit lines given my current traffic?",
-    },
     "utility_pressure_semantics": {
-        "title": "Utility data is partial",
+        "title": "Utility data is unavailable",
         "ask_prompt": "How do I fix water and sewage service in my city?",
     },
 }
@@ -392,14 +380,11 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     watched_groups = [
         ("housing_pressure_semantics", pick_group(snapshot, "HousingPressureSemantics")),
         ("labor_pressure_context", pick_group(snapshot, "LaborPressureContext")),
-        ("mobility", pick_group(snapshot, "Mobility")),
-        ("economy_signals", pick_group(snapshot, "EconomySignals")),
-        ("transit_performance_semantics", pick_group(snapshot, "TransitPerformanceSemantics")),
         ("utility_pressure_semantics", utility),
     ]
     for group_id, group in watched_groups:
         status = pick(group, "Status", "status")
-        if status not in ("partial", "unavailable"):
+        if status != "unavailable":
             continue
         copy = _SEMANTIC_PARTIAL_COPY.get(group_id)
         if not copy:

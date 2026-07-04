@@ -70,8 +70,6 @@
 
           <div class="brand-title">CitiesAI</div>
 
-          <div class="brand-sub">City advisor for CS2</div>
-
         </div>
 
       </div>
@@ -120,6 +118,8 @@
 
             <span id="freshness-pill" class="pill">...</span>
 
+            <button type="button" id="open-diagnostics" class="btn ghost btn-sm">Diagnostics</button>
+
             <button type="button" id="refresh-dashboard" class="btn secondary">Refresh</button>
 
           </div>
@@ -127,14 +127,6 @@
         </header>
 
         <div id="metric-grid" class="metric-grid"></div>
-
-        <details class="details-panel">
-
-          <summary>Technical details &amp; paths</summary>
-
-          <pre id="brief-technical" class="mono-block"></pre>
-
-        </details>
 
       </section>
 
@@ -352,6 +344,64 @@
     </main>
 
   </div>
+
+
+
+  <div id="metric-modal" class="metric-modal" hidden role="dialog" aria-modal="true" aria-labelledby="metric-modal-title">
+
+    <div class="metric-modal-backdrop" data-close-metric-modal></div>
+
+    <div class="metric-modal-card">
+
+      <header class="metric-modal-header">
+
+        <h2 id="metric-modal-title">Metric</h2>
+
+        <button type="button" id="metric-modal-close" class="btn ghost metric-modal-close" aria-label="Close">×</button>
+
+      </header>
+
+      <div id="metric-modal-values" class="metric-modal-values"></div>
+
+      <p id="metric-modal-desc" class="metric-modal-desc muted small"></p>
+
+      <div class="metric-modal-chart-wrap">
+
+        <svg id="metric-modal-chart" class="metric-detail-chart" viewBox="0 0 560 220" aria-hidden="true"></svg>
+
+      </div>
+
+      <p id="metric-modal-meta" class="metric-modal-meta muted small"></p>
+
+    </div>
+
+  </div>
+
+
+
+  <div id="diagnostics-modal" class="metric-modal" hidden role="dialog" aria-modal="true" aria-labelledby="diagnostics-modal-title">
+
+    <div class="metric-modal-backdrop" data-close-diagnostics-modal></div>
+
+    <div class="metric-modal-card diagnostics-modal-card">
+
+      <header class="metric-modal-header">
+
+        <h2 id="diagnostics-modal-title">City snapshot diagnostics</h2>
+
+        <button type="button" id="diagnostics-modal-close" class="btn ghost metric-modal-close" aria-label="Close">×</button>
+
+      </header>
+
+      <p class="muted small diagnostics-modal-intro">Export metadata, schema version, and advisor context.</p>
+
+      <pre id="brief-technical" class="mono-block diagnostics-modal-body"></pre>
+
+    </div>
+
+  </div>
+
+
 
   <script src="/static/app.js"></script>
 
