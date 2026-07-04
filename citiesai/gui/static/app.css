@@ -256,7 +256,22 @@ a { color: var(--accent-2); }
 .issues-list {
   display: flex;
   flex-direction: column;
+  gap: 1.25rem;
+}
+
+.issues-section {
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
+}
+
+.issues-section-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .issues-empty {

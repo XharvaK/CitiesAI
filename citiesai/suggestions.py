@@ -33,6 +33,11 @@ def build_ask_suggestions(
 ) -> list[str]:
     suggestions: list[str] = []
 
+    for issue in (metrics or {}).get("city_issues") or []:
+        prompt = issue.get("ask_prompt")
+        if prompt:
+            suggestions.append(str(prompt))
+
     for issue in issues:
         prompt = issue.get("ask_prompt")
         if prompt:

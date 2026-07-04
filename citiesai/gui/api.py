@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..ask_core import build_ask_bundle, meta_to_dict, run_ask
+from ..city_issues import detect_city_issues
 from ..config import config_path, load_config, merge_discovered, set_onboarding_complete
 from ..dashboard import extract_headline_metrics
 from ..discovery import discover_paths
@@ -48,7 +49,9 @@ def _metrics_for_status() -> dict[str, Any] | None:
     if snapshot is None:
         return None
     meta = snapshot_meta(snapshot, path=export_path)
-    return extract_headline_metrics(snapshot, meta)
+    metrics = extract_headline_metrics(snapshot, meta)
+    metrics["city_issues"] = detect_city_issues(snapshot)
+    return metrics
 
 
 def _parse_limit(raw: Any, *, default: int = 5) -> int:

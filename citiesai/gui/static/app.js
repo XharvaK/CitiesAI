@@ -1,4 +1,4 @@
-const POLL_MS = 60000;
+const POLL_MS = 10000;
 
 const ONBOARDING_STEPS = [
   {
@@ -12,7 +12,7 @@ const ONBOARDING_STEPS = [
   },
   {
     title: "Install data export mod",
-    html: `<p>A tiny mod writes a snapshot of your city every ~60 seconds while you play. Close CS2 if install fails.</p><p id="onboard-mod" class="muted"></p>`,
+    html: `<p>A tiny mod writes a snapshot of your city every ~10 seconds while you play. Close CS2 if install fails.</p><p id="onboard-mod" class="muted"></p>`,
     onEnter: checkMod,
   },
   {
@@ -107,7 +107,7 @@ function formatAge(seconds) {
 
 function freshnessCountdown(ageSeconds) {
   if (ageSeconds == null) return null;
-  return Math.max(0, 90 - ageSeconds);
+  return Math.max(0, 30 - ageSeconds);
 }
 
 function drawSparkline(svg, values) {
@@ -244,7 +244,7 @@ function synthesizeIssuesFromStatus(status) {
       severity: "warn",
       title: "No city export yet",
       detail: "Load a city in CS2 with the Data Export mod enabled.",
-      hint: "After loading, wait about one minute for the first snapshot.",
+      hint: "After loading, wait a few seconds for the first snapshot.",
       ask_prompt: "Why is my city export missing and how do I fix it?",
       report_category: "bug",
     });
@@ -426,6 +426,34 @@ function renderDashboard(data) {
   $("brief-technical").textContent = data.brief || "";
 }
 
+function renderIssueCard(issue) {
+  const actions = [];
+  if (issue.ask_prompt) {
+    actions.push(
+      `<button type="button" class="btn secondary btn-sm issue-ask" data-prompt="${escapeAttr(issue.ask_prompt)}">Ask about this</button>`
+    );
+  }
+  if (issue.action_view === "settings") {
+    actions.push(`<button type="button" class="btn secondary btn-sm issue-settings">Open Settings</button>`);
+  }
+  actions.push(
+    `<button type="button" class="btn ghost btn-sm issue-report" data-category="${escapeAttr(issue.report_category || "general")}" data-title="${escapeAttr(issue.title)}" data-issue-id="${escapeAttr(issue.id)}">Report</button>`
+  );
+  const severityLabel =
+    issue.severity === "error" ? "Error" : issue.severity === "warn" ? "Warning" : "Note";
+  const hint = issue.hint ? `<p class="issue-hint muted small">${escapeHtml(issue.hint)}</p>` : "";
+  return `<article class="issue-card severity-${issue.severity}">
+    <div class="issue-stripe"></div>
+    <div class="issue-body">
+      <p class="issue-severity muted small">${severityLabel}</p>
+      <h3>${escapeHtml(issue.title)}</h3>
+      <p>${escapeHtml(issue.detail)}</p>
+      ${hint}
+      <div class="issue-actions">${actions.join("")}</div>
+    </div>
+  </article>`;
+}
+
 function renderIssues(issues) {
   const list = $("issues-list");
   if (!issues.length) {
@@ -436,39 +464,22 @@ function renderIssues(issues) {
     return;
   }
 
-  list.innerHTML = issues
-    .map((issue) => {
-      const actions = [];
-      if (issue.ask_prompt) {
-        actions.push(
-          `<button type="button" class="btn secondary btn-sm issue-ask" data-prompt="${escapeAttr(issue.ask_prompt)}">Ask about this</button>`
-        );
-      }
-      if (issue.action_view === "settings") {
-        actions.push(`<button type="button" class="btn secondary btn-sm issue-settings">Open Settings</button>`);
-      }
-      actions.push(
-        `<button type="button" class="btn ghost btn-sm issue-report" data-category="${escapeAttr(issue.report_category || "general")}" data-title="${escapeAttr(issue.title)}" data-issue-id="${escapeAttr(issue.id)}">Report</button>`
-      );
-      const severityLabel =
-        issue.severity === "error"
-          ? "Error"
-          : issue.severity === "warn"
-            ? "Warning"
-            : "Note";
-      const hint = issue.hint ? `<p class="issue-hint muted small">${escapeHtml(issue.hint)}</p>` : "";
-      return `<article class="issue-card severity-${issue.severity}">
-        <div class="issue-stripe"></div>
-        <div class="issue-body">
-          <p class="issue-severity muted small">${severityLabel}</p>
-          <h3>${escapeHtml(issue.title)}</h3>
-          <p>${escapeHtml(issue.detail)}</p>
-          ${hint}
-          <div class="issue-actions">${actions.join("")}</div>
-        </div>
-      </article>`;
-    })
-    .join("");
+  const cityIssues = issues.filter((issue) => issue.kind === "city");
+  const setupIssues = issues.filter((issue) => issue.kind !== "city");
+  const sections = [];
+
+  if (cityIssues.length) {
+    sections.push(
+      `<div class="issues-section"><h2 class="issues-section-title">Your city</h2>${cityIssues.map(renderIssueCard).join("")}</div>`
+    );
+  }
+  if (setupIssues.length) {
+    sections.push(
+      `<div class="issues-section"><h2 class="issues-section-title">Setup &amp; app</h2>${setupIssues.map(renderIssueCard).join("")}</div>`
+    );
+  }
+
+  list.innerHTML = sections.join("");
 
   list.querySelectorAll(".issue-ask").forEach((btn) => {
     btn.addEventListener("click", () => {

@@ -42,9 +42,6 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
             note = notes[0] if isinstance(notes, list) and notes else ""
             signals.append({"id": name, "status": str(status), "note": str(note)})
 
-    if income is not None and expense is not None and expense > income and expense > 0:
-        signals.append({"id": "budget", "status": "deficit", "note": "Expenses exceed income"})
-
     return {
         "city_name": meta.city_name or "Unnamed city",
         "exported_at_utc": meta.exported_at_utc,

@@ -19,7 +19,9 @@ Cities2-MCP corpus     →  wiki + encyclopedia  →  retrieval for answers
 Your Mistral API key   →  optional LLM  →  synthesized reply
 ```
 
-Export refreshes about every **60 seconds** while a city is loaded in-game. When CS2 is closed, the last snapshot stays on disk; the dashboard shows **Stale** until you play again — that is normal, not a setup error.
+Export refreshes about every **10 seconds** while a city is loaded in-game (requires the bundled export mod). When CS2 is closed, the last snapshot stays on disk; the dashboard shows **Stale** after ~30 seconds without a new export — that is normal, not a setup error.
+
+The **Issues** tab lists setup problems and **current city pressures** (water, health, jobs, transit, budget, and more) with one-click **Ask about this** prompts.
 
 ## What you need
 

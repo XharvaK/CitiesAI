@@ -24,8 +24,8 @@ I'm looking for beta testers for **CitiesAI**, a free desktop companion I built 
 
 **What it does**
 
-- Installs a small **read-only** export mod that writes city metrics to a JSON snapshot every ~60s while you play
-- Local web dashboard: population, treasury, wellbeing, traffic, pressure signals
+- Installs a small **read-only** export mod that writes city metrics to a JSON snapshot every ~10s while you play
+- Local dashboard: population, treasury, wellbeing, traffic, and **Issues** for live city pressures (water, health, jobs, transit)
 - **Ask** tab: questions grounded in your numbers + CS2 wiki / in-game encyclopedia
 - Optional AI answers via your own free Mistral API key (stats work without it)
 

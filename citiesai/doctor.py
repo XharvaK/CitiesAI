@@ -49,7 +49,7 @@ def run_doctor(cfg: CitiesAIConfig | None = None) -> int:
         else:
             print("  export age: unknown")
         if export.get("stale"):
-            print("  warning: export is stale (>90 sec). Load city in-game or wait for next export cycle.")
+            print("  warning: export is stale (>30 sec). Load city in-game or wait for next export cycle.")
     else:
         print("  (no export file)")
 

@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .constants import STALE_AFTER_SECONDS
+
 JsonDict = dict[str, Any]
 
 
@@ -47,7 +49,7 @@ class SnapshotMeta:
     stale: bool
 
 
-def snapshot_meta(snapshot: JsonDict, *, path: Path, stale_after_seconds: float = 90.0) -> SnapshotMeta:
+def snapshot_meta(snapshot: JsonDict, *, path: Path, stale_after_seconds: float = STALE_AFTER_SECONDS) -> SnapshotMeta:
     exported_raw = pick(snapshot, "ExportedAtUtc", "exported_at_utc")
     age_seconds: float | None = None
     stale = False

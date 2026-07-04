@@ -8,9 +8,9 @@ CitiesAI needs [CS2 Data Export](https://github.com/mayor-modder/Cities2-DataExp
 %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\CS2DataExport\latest.json
 ```
 
-Default export interval: **60 seconds** after city load.
+Default export interval: **10 seconds** after city load.
 
-Override with environment variable `CS2DATAEXPORT_INTERVAL_SECONDS` (minimum 15).
+Override with environment variable `CS2DATAEXPORT_INTERVAL_SECONDS` (minimum 10).
 
 ## Option A: Paradox Mods (when published)
 

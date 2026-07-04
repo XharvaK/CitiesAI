@@ -54,9 +54,11 @@ def _issue(
     ask_prompt: str = "",
     report_category: str = "general",
     action_view: str | None = None,
+    kind: str = "setup",
 ) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "id": issue_id,
+        "kind": kind,
         "severity": severity,
         "title": title,
         "detail": detail,
@@ -127,7 +129,7 @@ def collect_issues(
                 severity="warn",
                 title="No city export yet",
                 detail="Load a city in CS2 with the Data Export mod enabled.",
-                hint="After loading, wait about one minute for the first snapshot.",
+                hint="After loading, wait a few seconds for the first snapshot.",
                 ask_prompt="Why is my city export missing and how do I fix it?",
                 report_category="bug",
             )
@@ -171,6 +173,12 @@ def collect_issues(
             )
         )
 
+    city_issue_ids: set[str] = set()
+    for city_issue in (metrics or {}).get("city_issues") or []:
+        if isinstance(city_issue, dict) and city_issue.get("id"):
+            city_issue_ids.add(str(city_issue["id"]))
+            issues.append(city_issue)
+
     llm = status.get("llm") or {}
     if not llm.get("configured"):
         issues.append(
@@ -186,6 +194,8 @@ def collect_issues(
 
     for signal in (metrics or {}).get("signals") or []:
         signal_id = str(signal.get("id", ""))
+        if signal_id == "budget" and "city_budget_deficit" in city_issue_ids:
+            continue
         copy = _SIGNAL_COPY.get(signal_id)
         if not copy:
             continue

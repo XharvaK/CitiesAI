@@ -14,7 +14,7 @@ Run after playing a city for 30+ minutes with varied systems (zoning, services, 
 ## Setup
 
 - [ ] `citiesai doctor` passes (export fresh, encyclopedia available)
-- [ ] Export age under 90 seconds during test session
+- [ ] Export age under 30 seconds during test session
 
 ## GUI (v0.1)
 

@@ -100,5 +100,5 @@ Write-Host ''
 Write-Host 'Next:' -ForegroundColor Cyan
 Write-Host '  1. Launch CS2 and load a city'
 Write-Host '  2. Enable CS2 Data Export in the mod list if needed'
-Write-Host '  3. Wait up to 60 seconds for the first export after loading a city'
+Write-Host '  3. Wait up to 10 seconds for the first export after loading a city'
 Write-Host "  4. Run: powershell -ExecutionPolicy Bypass -File `"$PSScriptRoot\verify-export.ps1`""
