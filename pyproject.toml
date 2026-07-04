@@ -1,0 +1,66 @@
+[project]
+name = "citiesai"
+version = "0.1.0"
+description = "Read-only Cities: Skylines II gameplay advisor - city snapshot + wiki knowledge"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "XharvaK" }]
+keywords = ["cities-skylines-2", "cs2", "game-advisor", "mistral"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment :: Simulation",
+]
+dependencies = [
+    "cities2-mcp>=0.1.9,<0.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/XharvaK/CitiesAI"
+Repository = "https://github.com/XharvaK/CitiesAI"
+Issues = "https://github.com/XharvaK/CitiesAI/issues"
+
+[project.scripts]
+citiesai = "citiesai.cli:main"
+citiesai-advisor = "citiesai.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["citiesai"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/citiesai",
+    "/skills",
+    "/docs",
+    "/scripts",
+    "/tests",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
