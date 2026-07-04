@@ -47,6 +47,8 @@ let dashboardTimer = null;
 let lastStatus = null;
 let lastIssues = [];
 let llmConfigured = false;
+let refreshInFlight = false;
+let statusRefreshInFlight = false;
 
 function $(id) {
   return document.getElementById(id);
@@ -54,8 +56,18 @@ function $(id) {
 
 async function fetchJson(url, options) {
   const response = await fetch(url, options);
-  const data = await response.json();
-  if (!response.ok && data.error) throw new Error(data.error);
+  let data = {};
+  try {
+    data = await response.json();
+  } catch {
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status})`);
+    }
+    throw new Error("Invalid server response");
+  }
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed (${response.status})`);
+  }
   return data;
 }
 
@@ -70,13 +82,21 @@ function toast(message, kind = "") {
 function formatNum(n) {
   if (n == null || Number.isNaN(n)) return "n/a";
   const rounded = Math.round(Number(n));
-  return Math.abs(rounded).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return rounded.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function formatSignedNum(n) {
+  if (n == null || Number.isNaN(n)) return "n/a";
+  const rounded = Math.round(Number(n));
+  const body = Math.abs(rounded).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  if (rounded > 0) return `+${body}`;
+  if (rounded < 0) return `-${body}`;
+  return body;
 }
 
 function formatDelta(delta) {
   if (delta == null || Number.isNaN(delta) || delta === 0) return "";
-  const sign = delta > 0 ? "+" : "";
-  return `${sign}${formatNum(delta)}`;
+  return formatSignedNum(delta);
 }
 
 function formatAge(seconds) {
@@ -135,7 +155,13 @@ let feedbackContextIssueId = "";
 
 function switchView(name, options = {}) {
   document.querySelectorAll(".nav-item").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.view === name);
+    const active = btn.dataset.view === name;
+    btn.classList.toggle("active", active);
+    if (active) {
+      btn.setAttribute("aria-current", "page");
+    } else {
+      btn.removeAttribute("aria-current");
+    }
   });
   document.querySelectorAll(".view").forEach((panel) => {
     const active = panel.id === `view-${name}`;
@@ -145,14 +171,16 @@ function switchView(name, options = {}) {
   if (name === "ask") {
     renderSuggestions();
     updateAskHelper();
+    updateAskWelcome();
     $("question").focus();
   }
-  if (name === "settings") loadSettings();
+  if (name === "settings") void loadSettings();
   if (name === "issues") refreshIssues({ toastOnError: true });
   if (name === "feedback") {
+    if (!options.issueId) feedbackContextIssueId = "";
     if (options.category) setFeedbackCategory(options.category);
     if (options.message) $("feedback-message").value = options.message;
-    feedbackContextIssueId = options.issueId || "";
+    if (options.issueId) feedbackContextIssueId = options.issueId;
     updateFeedbackIssuesLink();
   }
 }
@@ -220,6 +248,16 @@ function synthesizeIssuesFromStatus(status) {
       ask_prompt: "Why is my city export missing and how do I fix it?",
       report_category: "bug",
     });
+  } else if (exportBlock.corrupt) {
+    issues.push({
+      id: "export_corrupt",
+      severity: "error",
+      title: "City export file is unreadable",
+      detail: String(exportBlock.error || "The latest.json file could not be parsed."),
+      hint: "Re-load your city in CS2 or wait for a new snapshot.",
+      report_category: "bug",
+      action_view: "settings",
+    });
   } else if (exportBlock.stale) {
     const age = exportBlock.age_seconds;
     const ageText = typeof age === "number" ? `${Math.round(age)} seconds` : "a while";
@@ -272,22 +310,31 @@ function issueCountLabel(count) {
   return count === 1 ? "1 issue" : `${count} issues`;
 }
 
+function infoIssueCount(issues) {
+  return issues.filter((i) => i.severity === "info").length;
+}
+
 function renderHealthStrip(status, blockingCount = 0) {
   const el = $("health-strip");
   el.classList.remove("ok", "warn", "bad", "clickable");
   el.onclick = null;
+  el.removeAttribute("aria-disabled");
 
   if (!status) {
-    el.textContent = "Checking…";
+    el.textContent = "Status unavailable";
+    el.classList.add("warn", "clickable");
+    el.onclick = () => switchView("issues");
     return;
   }
 
   const exportOk = status.export && !status.export.stale;
   const encOk = status.knowledge?.encyclopedia?.available;
+  const notes = infoIssueCount(lastIssues);
 
-  if (status.ok && blockingCount === 0) {
+  if (status.ok && blockingCount === 0 && notes === 0) {
     el.textContent = "All systems ready";
     el.classList.add("ok");
+    el.setAttribute("aria-disabled", "true");
     return;
   }
 
@@ -297,6 +344,18 @@ function renderHealthStrip(status, blockingCount = 0) {
   if (!exportOk && !encOk && blockingCount > 0) {
     el.textContent = "Setup needed";
     el.classList.add("bad");
+    return;
+  }
+
+  if (blockingCount > 0) {
+    el.textContent = issueCountLabel(blockingCount);
+    el.classList.add("warn");
+    return;
+  }
+
+  if (notes > 0) {
+    el.textContent = notes === 1 ? "Ready · 1 note in Issues" : `Ready · ${notes} notes in Issues`;
+    el.classList.add("ok");
     return;
   }
 
@@ -335,7 +394,7 @@ function renderDashboard(data) {
     $("hero-sub").textContent = data.hint || data.error || "";
     $("freshness-pill").textContent = "No export";
     $("freshness-pill").className = "pill missing";
-    grid.innerHTML = `<div class="skeleton"></div>`.repeat(4);
+    grid.innerHTML = `<div class="skeleton"></div>`.repeat(METRIC_DEFS.length);
     $("brief-technical").textContent = "";
     return;
   }
@@ -403,10 +462,17 @@ function renderIssues(issues) {
       actions.push(
         `<button type="button" class="btn ghost btn-sm issue-report" data-category="${escapeAttr(issue.report_category || "general")}" data-title="${escapeAttr(issue.title)}" data-issue-id="${escapeAttr(issue.id)}">Report</button>`
       );
+      const severityLabel =
+        issue.severity === "error"
+          ? "Error"
+          : issue.severity === "warn"
+            ? "Warning"
+            : "Note";
       const hint = issue.hint ? `<p class="issue-hint muted small">${escapeHtml(issue.hint)}</p>` : "";
       return `<article class="issue-card severity-${issue.severity}">
         <div class="issue-stripe"></div>
         <div class="issue-body">
+          <p class="issue-severity muted small">${severityLabel}</p>
           <h3>${escapeHtml(issue.title)}</h3>
           <p>${escapeHtml(issue.detail)}</p>
           ${hint}
@@ -469,7 +535,7 @@ async function refreshIssues({ toastOnError = false } = {}) {
       return data;
     } catch (err) {
       if ($("view-issues").classList.contains("active")) {
-        $("issues-list").innerHTML = `<div class="issues-empty">
+        $("issues-list").innerHTML = `<div class="issues-error">
           <p>Could not load issues. Restart CitiesAI and try again.</p>
         </div>`;
       }
@@ -480,17 +546,28 @@ async function refreshIssues({ toastOnError = false } = {}) {
 }
 
 async function loadDashboard() {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
   try {
     const data = await fetchJson("/api/dashboard");
     renderDashboard(data);
     await refreshIssues();
     await renderSuggestions();
   } catch (err) {
+    renderDashboard({
+      ok: false,
+      error: "Could not refresh dashboard",
+      hint: String(err.message || err),
+    });
     toast(String(err.message || err), "err");
+  } finally {
+    refreshInFlight = false;
   }
 }
 
 async function loadStatus({ promptOnboarding = false } = {}) {
+  if (statusRefreshInFlight) return lastStatus;
+  statusRefreshInFlight = true;
   try {
     const status = await fetchJson("/api/status");
     lastStatus = status;
@@ -509,14 +586,18 @@ async function loadStatus({ promptOnboarding = false } = {}) {
       status.issue_count ??
       0;
     renderHealthStrip(status, blocking);
+    updateFeedbackIssuesLink();
 
     if (promptOnboarding && !onboardingDismissed && !status.onboarding_complete) {
       showOnboarding();
     }
     return status;
-  } catch {
+  } catch (err) {
     renderHealthStrip(null);
+    toast(String(err.message || err), "err");
     return null;
+  } finally {
+    statusRefreshInFlight = false;
   }
 }
 
@@ -545,6 +626,14 @@ async function renderSuggestions() {
   });
 }
 
+function updateAskWelcome() {
+  const hasChat = $("chat-log").children.length > 0;
+  const welcome = $("ask-welcome");
+  const suggestions = $("suggestions");
+  if (welcome) welcome.classList.toggle("hidden", hasChat);
+  if (suggestions) suggestions.classList.toggle("hidden", hasChat);
+}
+
 function appendBubble(role, html) {
   const log = $("chat-log");
   const div = document.createElement("div");
@@ -552,6 +641,7 @@ function appendBubble(role, html) {
   div.innerHTML = html;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
+  updateAskWelcome();
   return div;
 }
 
@@ -563,6 +653,7 @@ function loadChatHistory() {
       appendBubble("user", entry.q);
       if (entry.a) appendBubble("assistant", renderMarkdown(entry.a));
     });
+    updateAskWelcome();
   } catch {
     /* ignore */
   }
@@ -583,10 +674,13 @@ async function askStream(question) {
   appendBubble("user", escapeHtml(question));
   const assistant = appendBubble("assistant", typingIndicatorHtml());
   let answer = "";
+  let streamFailed = false;
   const submitBtn = $("ask-submit");
+  const askForm = $("ask-form");
   const submitLabel = submitBtn.textContent;
   submitBtn.disabled = true;
   submitBtn.textContent = "Sending…";
+  askForm.setAttribute("aria-busy", "true");
 
   try {
     const response = await fetch("/api/ask/stream", {
@@ -594,7 +688,16 @@ async function askStream(question) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, use_llm: true }),
     });
-    if (!response.ok) throw new Error("Ask failed");
+    if (!response.ok) {
+      let message = "Ask failed";
+      try {
+        const errBody = await response.json();
+        message = errBody.error || message;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(message);
+    }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -615,55 +718,80 @@ async function askStream(question) {
           if (line.startsWith("data:")) data = line.slice(5).trim();
         }
         if (!data) continue;
-        const payload = JSON.parse(data);
+        let payload;
+        try {
+          payload = JSON.parse(data);
+        } catch {
+          continue;
+        }
         if (event === "token") {
           answer += payload.text || "";
           assistant.innerHTML = renderMarkdown(answer);
           $("chat-log").scrollTop = $("chat-log").scrollHeight;
         }
         if (event === "error") {
-          assistant.innerHTML = `<span class="muted">${escapeHtml(payload.error)}</span>`;
+          streamFailed = true;
+          answer = "";
+          const hint = payload.hint ? `<p class="muted small">${escapeHtml(payload.hint)}</p>` : "";
+          assistant.innerHTML = `<span class="muted">${escapeHtml(payload.error || "Ask failed")}</span>${hint}`;
           if (payload.mode === "bundle" && payload.bundle) {
-            assistant.innerHTML += `<details><summary>Bundle</summary><pre class="mono-block">${escapeHtml(payload.bundle)}</pre></details>`;
+            assistant.innerHTML += `<details><summary>Retrieval bundle</summary><pre class="mono-block">${escapeHtml(payload.bundle)}</pre></details>`;
           }
+        }
+        if (event === "done" && !answer.trim()) {
+          streamFailed = true;
+          assistant.innerHTML = `<span class="muted">No answer returned. Check Settings for your API key or try again.</span>`;
         }
       }
     }
-    saveChatEntry(question, answer);
+    if (!streamFailed && answer.trim()) {
+      saveChatEntry(question, answer);
+    }
+  } catch (err) {
+    streamFailed = true;
+    assistant.innerHTML = `<span class="muted">${escapeHtml(String(err.message || err))}</span>`;
+    throw err;
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = submitLabel;
+    askForm.setAttribute("aria-busy", "false");
   }
 }
 
 async function loadSettings() {
-  const data = await fetchJson("/api/setup");
-  const setPathTitle = (el, value) => {
-    el.value = value || "";
-    el.title = value || "";
-  };
-  $("setup-source").value = data.source || "";
-  setPathTitle($("setup-game"), data.game_dir);
-  setPathTitle($("setup-locale"), data.locale_cok);
-  setPathTitle($("setup-export"), data.export_path);
-  $("setup-model").value = data.llm_model || "mistral-medium-latest";
-  const modBadge = $("mod-status");
-  modBadge.textContent = data.mod_installed ? "Installed" : "Not installed";
-  modBadge.className = `status-badge ${data.mod_installed ? "ok" : "missing"}`;
-  const keyLine = $("key-status");
-  if (data.llm_configured) {
-    keyLine.textContent = "API key configured";
-    keyLine.className = "key-status-pill ok";
-  } else {
-    keyLine.textContent = "No API key saved";
-    keyLine.className = "key-status-pill muted";
+  try {
+    const data = await fetchJson("/api/setup");
+    const setPathTitle = (el, value) => {
+      el.value = value || "";
+      el.title = value || "";
+    };
+    $("setup-source").value = data.source || "";
+    setPathTitle($("setup-game"), data.game_dir);
+    setPathTitle($("setup-locale"), data.locale_cok);
+    setPathTitle($("setup-export"), data.export_path);
+    $("setup-model").value = data.llm_model || "mistral-medium-latest";
+    const modBadge = $("mod-status");
+    modBadge.textContent = data.mod_installed ? "Installed" : "Not installed";
+    modBadge.className = `status-badge ${data.mod_installed ? "ok" : "missing"}`;
+    const keyLine = $("key-status");
+    if (data.llm_configured) {
+      keyLine.textContent = "API key configured";
+      keyLine.className = "key-status-pill ok";
+    } else {
+      keyLine.textContent = "No API key saved";
+      keyLine.className = "key-status-pill muted";
+    }
+  } catch (err) {
+    toast(String(err.message || err), "err");
   }
 }
 
 function setFeedbackCategory(category) {
   $("feedback-category").value = category;
   document.querySelectorAll(".segment").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.category === category);
+    const active = btn.dataset.category === category;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
   });
   const placeholder = FEEDBACK_PLACEHOLDERS[category] || FEEDBACK_PLACEHOLDERS.general;
   $("feedback-message").placeholder = placeholder;
@@ -695,12 +823,17 @@ async function detectGame() {
 
 async function checkMod() {
   const el = $("onboard-mod");
-  const data = await fetchJson("/api/status");
-  if (data.mod_installed) {
-    el.textContent = "Mod already installed.";
-    return;
+  if (!el) return;
+  try {
+    const data = await fetchJson("/api/status");
+    if (data.mod_installed) {
+      el.textContent = "Mod already installed.";
+      return;
+    }
+    el.textContent = "Click Continue to install the mod.";
+  } catch (err) {
+    el.textContent = String(err.message || err);
   }
-  el.textContent = "Click Continue to install the mod.";
 }
 
 async function waitForExport() {
@@ -728,13 +861,18 @@ function showOnboarding() {
   onboardingStep = 0;
   $("onboarding").removeAttribute("hidden");
   renderOnboardingStep();
+  $("onboarding-next").focus();
 }
 
 function renderOnboardingStep() {
+  if (onboardingStep !== 3) {
+    clearInterval(exportPollTimer);
+    exportPollTimer = null;
+  }
   const step = ONBOARDING_STEPS[onboardingStep];
   const total = ONBOARDING_STEPS.length;
   $("onboarding-bar").style.width = `${((onboardingStep + 1) / total) * 100}%`;
-  $("onboarding-body").innerHTML = `<h2>${step.title}</h2>${step.html}`;
+  $("onboarding-body").innerHTML = `<h2 id="onboarding-title">${step.title}</h2>${step.html}`;
   $("onboarding-back").hidden = onboardingStep === 0;
   $("onboarding-next").textContent = onboardingStep === total - 1 ? "Open dashboard" : "Continue";
   if (step.onEnter) step.onEnter();
@@ -811,6 +949,7 @@ $("question").addEventListener("input", () => {
 $("clear-chat").addEventListener("click", () => {
   $("chat-log").innerHTML = "";
   localStorage.removeItem("citiesai-chat");
+  updateAskWelcome();
 });
 
 $("save-setup").addEventListener("click", async () => {
@@ -858,12 +997,10 @@ $("save-key").addEventListener("click", async () => {
       body: JSON.stringify({ api_key: $("api-key").value.trim() }),
     });
     toast("API key saved locally", "ok");
-    $("key-status").textContent = "API key configured";
-    $("key-status").className = "key-status-pill ok";
+    $("key-status").textContent = "API key saved — use Test key to verify";
+    $("key-status").className = "key-status-pill muted";
     $("api-key").value = "";
-    llmConfigured = true;
-    updateAskHelper();
-    loadStatus();
+    await loadStatus();
   } catch (err) {
     toast(String(err.message || err), "err");
   }
@@ -915,6 +1052,9 @@ $("feedback-form").addEventListener("submit", async (e) => {
       data.mode === "discord"
         ? "Thanks! Your feedback was sent to the beta channel."
         : `Thanks! Saved locally at ${data.saved_to}`;
+    if (data.warning) {
+      toast(String(data.warning), "err");
+    }
     success.hidden = false;
     success.innerHTML = `<span class="feedback-success-icon">✓</span><p>${escapeHtml(msg)}</p>`;
     $("feedback-message").value = "";
@@ -955,6 +1095,14 @@ $("onboarding-next").addEventListener("click", async () => {
   renderOnboardingStep();
 });
 
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const onboarding = $("onboarding");
+  if (!onboarding.hasAttribute("hidden")) {
+    void completeOnboarding();
+  }
+});
+
 async function init() {
   try {
     const ver = await fetchJson("/api/version");
@@ -964,6 +1112,7 @@ async function init() {
   }
   loadChatHistory();
   updateAskHelper();
+  setFeedbackCategory($("feedback-category").value);
   await loadStatus({ promptOnboarding: true });
   await loadDashboard();
   dashboardTimer = setInterval(async () => {

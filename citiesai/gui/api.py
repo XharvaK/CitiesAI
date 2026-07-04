@@ -15,7 +15,7 @@ from ..issues import blocking_issue_count, collect_issues
 from ..llm import resolve_llm_settings, stream_answer, test_api_key
 from ..mod_install import install_mod, mod_installed
 from ..setup_wizard import save_detected_config
-from ..snapshot import load_snapshot, snapshot_meta
+from ..snapshot import load_snapshot_safe, snapshot_meta
 from ..snapshot_history import get_history
 from ..status import collect_status_report
 from ..suggestions import build_ask_suggestions
@@ -44,9 +44,19 @@ def _metrics_for_status() -> dict[str, Any] | None:
     export_path = cfg.resolved_export_path()
     if not export_path.is_file():
         return None
-    snapshot = load_snapshot(export_path)
+    snapshot, err = load_snapshot_safe(export_path)
+    if snapshot is None:
+        return None
     meta = snapshot_meta(snapshot, path=export_path)
     return extract_headline_metrics(snapshot, meta)
+
+
+def _parse_limit(raw: Any, *, default: int = 5) -> int:
+    try:
+        limit = int(raw)
+    except (TypeError, ValueError):
+        limit = default
+    return max(1, min(limit, 10))
 
 
 def _status_with_issues() -> dict[str, Any]:
@@ -94,8 +104,15 @@ def api_dashboard() -> dict[str, Any]:
             "error": "No city export yet",
             "hint": "Load a city in CS2 with the Data Export mod enabled.",
         }
+    snapshot, err = load_snapshot_safe(export_path)
+    if snapshot is None:
+        return {
+            "ok": False,
+            "error": "City export file is unreadable",
+            "hint": "Re-load your city in CS2 or delete the corrupt latest.json and wait for a new snapshot.",
+            "detail": err,
+        }
     get_history().refresh()
-    snapshot = load_snapshot(export_path)
     meta = snapshot_meta(snapshot, path=export_path)
     return {
         "ok": True,
@@ -114,26 +131,47 @@ def api_history() -> dict[str, Any]:
 def api_ask(body: dict[str, Any]) -> dict[str, Any]:
     question = str(body.get("question", "")).strip()
     use_llm = bool(body.get("use_llm", True))
-    limit = int(body.get("limit", 5))
-    limit = max(1, min(limit, 10))
+    limit = _parse_limit(body.get("limit", 5))
     return run_ask(question, use_llm=use_llm, limit=limit)
 
 
 def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
     cfg = load_config()
     question = str(body.get("question", "")).strip()
-    limit = max(1, min(int(body.get("limit", 5)), 10))
+    limit = _parse_limit(body.get("limit", 5))
     export_path = cfg.resolved_export_path()
     if not export_path.is_file():
-        yield _sse_event("error", {"error": "Export not found. Load a city in CS2."})
+        yield _sse_event(
+            "error",
+            {
+                "error": "No city export yet",
+                "hint": "Load a city in CS2 with the Data Export mod enabled.",
+            },
+        )
         return
     if not question:
         yield _sse_event("error", {"error": "Question is required."})
         return
 
-    snapshot = load_snapshot(export_path)
-    meta = snapshot_meta(snapshot, path=export_path)
-    bundle = build_ask_bundle(snapshot, meta, question, limit=limit)
+    snapshot, err = load_snapshot_safe(export_path)
+    if snapshot is None:
+        yield _sse_event(
+            "error",
+            {
+                "error": "City export file is unreadable",
+                "hint": "Re-load your city in CS2 or wait for a fresh snapshot.",
+                "detail": err,
+            },
+        )
+        return
+
+    try:
+        meta = snapshot_meta(snapshot, path=export_path)
+        bundle = build_ask_bundle(snapshot, meta, question, limit=limit)
+    except Exception as exc:  # noqa: BLE001 - surface to SSE client
+        yield _sse_event("error", {"error": str(exc)})
+        return
+
     yield _sse_event("meta", {"question": question, "meta": meta_to_dict(meta)})
     yield _sse_event("bundle", {"bundle": bundle})
 
@@ -146,7 +184,7 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
             yield _sse_event("token", {"text": chunk})
         yield _sse_event("done", {"mode": "llm"})
     except RuntimeError as exc:
-        yield _sse_event("error", {"error": str(exc), "mode": "bundle"})
+        yield _sse_event("error", {"error": str(exc), "mode": "bundle", "bundle": bundle})
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:

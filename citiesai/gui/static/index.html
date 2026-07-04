@@ -14,9 +14,6 @@
   <link rel="icon" href="/static/logo.png" type="image/png" sizes="512x512" />
   <link rel="apple-touch-icon" href="/static/logo.png" />
 
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/app.css" />
 
 </head>
@@ -27,7 +24,7 @@
 
 
 
-  <div id="onboarding" class="onboarding" hidden>
+  <div id="onboarding" class="onboarding" hidden role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
 
     <div class="onboarding-card">
 
@@ -47,7 +44,7 @@
 
       <div class="onboarding-actions">
 
-        <button type="button" id="onboarding-skip" class="btn ghost">Skip setup</button>
+        <button type="button" id="onboarding-skip" class="btn ghost">Open dashboard</button>
 
         <button type="button" id="onboarding-back" class="btn ghost" hidden>Back</button>
 
@@ -79,23 +76,23 @@
 
       </div>
 
-      <nav class="nav" role="tablist">
+      <nav class="nav" aria-label="Main">
 
-        <button class="nav-item active" data-view="dashboard" role="tab">Dashboard</button>
+        <button type="button" class="nav-item active" data-view="dashboard" aria-current="page">Dashboard</button>
 
-        <button class="nav-item" data-view="issues" role="tab">Issues</button>
+        <button type="button" class="nav-item" data-view="issues">Issues</button>
 
-        <button class="nav-item" data-view="ask" role="tab">Ask</button>
+        <button type="button" class="nav-item" data-view="ask">Ask</button>
 
-        <button class="nav-item" data-view="settings" role="tab">Settings</button>
+        <button type="button" class="nav-item" data-view="settings">Settings</button>
 
-        <button class="nav-item" data-view="feedback" role="tab">Feedback</button>
+        <button type="button" class="nav-item" data-view="feedback">Feedback</button>
 
       </nav>
 
       <div class="sidebar-foot">
 
-        <button type="button" id="health-strip" class="health-strip">Checking…</button>
+        <button type="button" id="health-strip" class="health-strip" aria-live="polite">Checking…</button>
 
         <div id="app-version" class="muted small"></div>
 
@@ -151,7 +148,7 @@
 
             <h1>Issues</h1>
 
-            <p class="muted">Setup problems and city alerts that may affect advice</p>
+            <p class="muted">Setup problems and city data notes that may affect advice</p>
 
           </div>
 
@@ -165,32 +162,37 @@
 
       <section id="view-ask" class="view" hidden>
 
-        <header class="view-header ask-header">
-          <div>
-            <h1>Ask CitiesAI</h1>
-            <p class="muted">Grounded in your city numbers + wiki knowledge</p>
+        <div class="ask-shell">
+          <header class="view-header ask-header">
+            <div>
+              <h1>Ask CitiesAI</h1>
+              <p class="muted">Grounded in your city numbers + wiki knowledge</p>
+            </div>
+            <button type="button" id="clear-chat" class="btn ghost">Clear chat</button>
+          </header>
+
+          <div class="ask-scroll">
+            <div id="ask-welcome" class="ask-welcome">
+              <p class="ask-welcome-title">Ask about your city</p>
+              <p class="muted small">Pick a suggestion below or type your own question. Answers use your live export and Cities Wiki knowledge.</p>
+            </div>
+
+            <div id="suggestions" class="suggestions"></div>
+
+            <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
           </div>
-          <button type="button" id="clear-chat" class="btn ghost">Clear chat</button>
-        </header>
 
-        <div id="suggestions" class="suggestions"></div>
-
-        <div id="chat-log" class="chat-log"></div>
-
-        <form id="ask-form" class="ask-bar">
-          <div class="composer">
-            <textarea id="question" rows="2" placeholder="What should I fix in my budget?"></textarea>
-          </div>
-
-          <div class="ask-bar-actions">
-
+          <form id="ask-form" class="ask-dock" aria-busy="false">
+            <div class="ask-composer-row">
+              <div class="composer">
+                <label class="sr-only" for="question">Your question</label>
+                <textarea id="question" rows="1" placeholder="Ask about traffic, budget, housing…" aria-describedby="ask-helper"></textarea>
+              </div>
+              <button type="submit" class="btn primary ask-send" id="ask-submit" aria-label="Send question">Send</button>
+            </div>
             <p id="ask-helper" class="ask-helper muted small"></p>
-
-            <button type="submit" class="btn primary" id="ask-submit">Send</button>
-
-          </div>
-
-        </form>
+          </form>
+        </div>
 
       </section>
 
@@ -299,7 +301,7 @@
 
             <p id="feedback-issues-link" class="feedback-issues-link" hidden>
 
-              <button type="button" class="link-btn" data-view-jump="issues">View open issues</button>
+              <button type="button" class="link-btn" data-view-jump="issues">View issues</button>
 
             </p>
 
@@ -329,7 +331,7 @@
 
             <label class="field"><span class="field-label">Message</span><textarea id="feedback-message" class="control" rows="5" required placeholder="Describe what happened or what you expected…"></textarea></label>
 
-            <input id="feedback-contact" class="control feedback-contact-input" type="text" placeholder="Discord username or email (optional)" autocomplete="off" />
+            <label class="field"><span class="field-label">Contact (optional)</span><input id="feedback-contact" class="control feedback-contact-input" type="text" placeholder="Discord username or email" autocomplete="off" /></label>
 
             <div class="feedback-footer">
               <label class="checkbox">
@@ -339,7 +341,7 @@
               <button type="submit" class="btn primary">Send feedback</button>
             </div>
 
-            <div id="feedback-success" class="feedback-success" hidden></div>
+            <div id="feedback-success" class="feedback-success" hidden role="status" aria-live="polite"></div>
 
           </form>
 

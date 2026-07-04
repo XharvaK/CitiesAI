@@ -21,6 +21,21 @@ def vendor_sample() -> dict:
     return load_snapshot(VENDOR_SAMPLE)
 
 
+def test_collect_issues_corrupt_export() -> None:
+    issues = collect_issues(
+        {
+            "ok": False,
+            "mod_installed": True,
+            "paths": {},
+            "export": {"corrupt": True, "error": "Expecting value"},
+            "knowledge": {"encyclopedia": {"available": True}},
+            "llm": {"configured": True},
+        },
+        None,
+    )
+    assert any(i["id"] == "export_corrupt" for i in issues)
+
+
 def test_collect_issues_stale_export_and_signal() -> None:
     status = {
         "ok": False,

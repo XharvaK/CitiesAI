@@ -132,6 +132,18 @@ def collect_issues(
                 report_category="bug",
             )
         )
+    elif export.get("corrupt"):
+        issues.append(
+            _issue(
+                "export_corrupt",
+                severity="error",
+                title="City export file is unreadable",
+                detail=str(export.get("error") or "The latest.json file could not be parsed."),
+                hint="Re-load your city in CS2 or delete the corrupt file and wait for a new snapshot.",
+                report_category="bug",
+                action_view="settings",
+            )
+        )
     elif export.get("stale"):
         age = export.get("age_seconds")
         age_text = f"{int(age)} seconds" if isinstance(age, (int, float)) else "a while"

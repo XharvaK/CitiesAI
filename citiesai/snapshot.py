@@ -30,6 +30,13 @@ def load_snapshot(path: Path) -> JsonDict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_snapshot_safe(path: Path) -> tuple[JsonDict | None, str | None]:
+    try:
+        return load_snapshot(path), None
+    except (json.JSONDecodeError, OSError, UnicodeError) as exc:
+        return None, str(exc)
+
+
 @dataclass(frozen=True)
 class SnapshotMeta:
     path: Path

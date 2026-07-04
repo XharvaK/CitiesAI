@@ -7,7 +7,7 @@ from .config import CitiesAIConfig, config_path, load_config
 from .discovery import discover_paths
 from .knowledge import knowledge_status, reset_knowledge_cache
 from .llm import resolve_llm_settings
-from .snapshot import load_snapshot, snapshot_meta
+from .snapshot import load_snapshot_safe, snapshot_meta
 
 
 def _path_entry(label: str, path: Path | None, *, must_exist: bool) -> dict[str, Any]:
@@ -42,17 +42,21 @@ def collect_status_report(cfg: CitiesAIConfig | None = None) -> dict[str, Any]:
 
     export_block: dict[str, Any] | None = None
     if export_path.is_file():
-        snapshot = load_snapshot(export_path)
-        meta = snapshot_meta(snapshot, path=export_path)
-        export_block = {
-            "schema_version": meta.schema_version,
-            "city_name": meta.city_name,
-            "exported_at_utc": meta.exported_at_utc,
-            "age_seconds": meta.age_seconds,
-            "stale": meta.stale,
-        }
-        if meta.stale:
+        snapshot, export_err = load_snapshot_safe(export_path)
+        if snapshot is None:
+            export_block = {"corrupt": True, "error": export_err}
             issues += 1
+        else:
+            meta = snapshot_meta(snapshot, path=export_path)
+            export_block = {
+                "schema_version": meta.schema_version,
+                "city_name": meta.city_name,
+                "exported_at_utc": meta.exported_at_utc,
+                "age_seconds": meta.age_seconds,
+                "stale": meta.stale,
+            }
+            if meta.stale:
+                issues += 1
 
     knowledge_block: dict[str, Any]
     try:

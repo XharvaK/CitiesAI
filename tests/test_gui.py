@@ -116,6 +116,20 @@ def test_load_config_migrates_legacy_model(tmp_path: Path, monkeypatch: pytest.M
     assert config_mod.DEFAULT_LLM_MODEL in config_file.read_text(encoding="utf-8")
 
 
+def test_api_dashboard_corrupt_export(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    export = tmp_path / "latest.json"
+    export.write_text("{not valid json", encoding="utf-8")
+
+    from citiesai import config as config_mod
+
+    cfg = config_mod.CitiesAIConfig(export_path=export)
+    monkeypatch.setattr("citiesai.gui.api.load_config", lambda: cfg)
+
+    result = api_dashboard()
+    assert result["ok"] is False
+    assert "unreadable" in result["error"].lower()
+
+
 def test_static_index_contains_title() -> None:
     body = _static_file("index.html")
     assert b"Dashboard" in body

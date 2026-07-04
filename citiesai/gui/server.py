@@ -123,7 +123,12 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
         if handler is None:
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
             return
-        self._send_json(HTTPStatus.OK, handler())
+        try:
+            result = handler()
+        except Exception as exc:  # noqa: BLE001 - return JSON for GUI clients
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+            return
+        self._send_json(HTTPStatus.OK, result)
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -143,6 +148,13 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
                 pass
+            except Exception as exc:  # noqa: BLE001 - best-effort error event after headers
+                try:
+                    err = f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+                    self.wfile.write(err.encode("utf-8"))
+                    self.wfile.flush()
+                except OSError:
+                    pass
             return
 
         post_handlers: dict[str, Any] = {
@@ -159,7 +171,11 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
             return
 
-        result = handler(body)
+        try:
+            result = handler(body)
+        except Exception as exc:  # noqa: BLE001 - return JSON for GUI clients
+            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+            return
         code = HTTPStatus.OK if result.get("ok", True) else HTTPStatus.BAD_REQUEST
         self._send_json(code, result)
 
@@ -225,7 +241,14 @@ def run_gui(
     load_env_file()
     apply_config_to_env(load_config())
     get_history().start()
-    server = ThreadingHTTPServer((host, port), CitiesAIHandler)
+    try:
+        server = ThreadingHTTPServer((host, port), CitiesAIHandler)
+    except OSError as exc:
+        print(
+            f"Could not start CitiesAI on {host}:{port} ({exc}). "
+            f"Close other CitiesAI instances or try: citiesai gui --port {(port + 1)}"
+        )
+        return 1
     url = f"http://{host}:{port}/"
 
     if window == "none":
