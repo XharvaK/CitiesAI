@@ -1,4 +1,5 @@
 const POLL_MS = 10000;
+const ASK_SUBMIT_LABEL = "Send";
 
 const ONBOARDING_STEPS = [
   {
@@ -701,17 +702,34 @@ function askFetchSignal(timeoutMs = 180000) {
   return controller.signal;
 }
 
+function resetAskSubmit() {
+  const submitBtn = $("ask-submit");
+  const askForm = $("ask-form");
+  submitBtn.disabled = false;
+  submitBtn.textContent = ASK_SUBMIT_LABEL;
+  askForm.setAttribute("aria-busy", "false");
+}
+
 async function askStream(question) {
   appendBubble("user", escapeHtml(question));
   const assistant = appendBubble("assistant", typingIndicatorHtml());
   let answer = "";
   let streamFailed = false;
+  let streamFinished = false;
+  let bodyReader = null;
   const submitBtn = $("ask-submit");
-  const askForm = $("ask-form");
-  const submitLabel = submitBtn.textContent || "Send";
   submitBtn.disabled = true;
   submitBtn.textContent = "Sending…";
-  askForm.setAttribute("aria-busy", "true");
+  $("ask-form").setAttribute("aria-busy", "true");
+
+  const finishStream = () => {
+    if (streamFinished) return;
+    streamFinished = true;
+    resetAskSubmit();
+    if (bodyReader && typeof bodyReader.cancel === "function") {
+      bodyReader.cancel().catch(() => {});
+    }
+  };
 
   const handlers = {
     onEvent(event, payload) {
@@ -728,11 +746,15 @@ async function askStream(question) {
         if (payload.mode === "bundle" && payload.bundle) {
           assistant.innerHTML += `<details><summary>Retrieval bundle</summary><pre class="mono-block">${escapeHtml(payload.bundle)}</pre></details>`;
         }
+        finishStream();
       }
-      if (event === "done" && !answer.trim()) {
-        streamFailed = true;
-        assistant.innerHTML =
-          `<span class="muted">No answer returned. Check Settings for your API key or try again.</span>`;
+      if (event === "done") {
+        if (!answer.trim()) {
+          streamFailed = true;
+          assistant.innerHTML =
+            `<span class="muted">No answer returned. Check Settings for your API key or try again.</span>`;
+        }
+        finishStream();
       }
     },
   };
@@ -758,19 +780,21 @@ async function askStream(question) {
     if (!response.body || typeof response.body.getReader !== "function") {
       drainSseBuffer(await response.text(), handlers);
     } else {
-      const reader = response.body.getReader();
+      bodyReader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
+      while (!streamFinished) {
+        const { done, value } = await bodyReader.read();
         if (value) {
           buffer += decoder.decode(value, { stream: true });
           buffer = drainSseBuffer(buffer, handlers);
         }
-        if (done) {
-          buffer += decoder.decode();
-          drainSseBuffer(buffer, handlers);
+        if (done || streamFinished) {
+          if (!streamFinished && buffer) {
+            buffer += decoder.decode();
+            drainSseBuffer(buffer, handlers);
+          }
           break;
         }
       }
@@ -787,9 +811,7 @@ async function askStream(question) {
         : String(err.message || err);
     assistant.innerHTML = `<span class="muted">${escapeHtml(message)}</span>`;
   } finally {
-    submitBtn.disabled = false;
-    submitBtn.textContent = submitLabel;
-    askForm.setAttribute("aria-busy", "false");
+    finishStream();
   }
 }
 
