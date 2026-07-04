@@ -144,20 +144,6 @@ def collect_issues(
                 action_view="settings",
             )
         )
-    elif export.get("stale"):
-        age = export.get("age_seconds")
-        age_text = f"{int(age)} seconds" if isinstance(age, (int, float)) else "a while"
-        issues.append(
-            _issue(
-                "export_stale",
-                severity="warn",
-                title="City export is stale",
-                detail=f"Last snapshot was received {age_text} ago.",
-                hint="Load your city in CS2 and keep the game running.",
-                ask_prompt="Why is my city data stale and how do I refresh it?",
-                report_category="bug",
-            )
-        )
 
     knowledge = status.get("knowledge") or {}
     enc = knowledge.get("encyclopedia") or {}

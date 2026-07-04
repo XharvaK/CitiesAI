@@ -258,18 +258,6 @@ function synthesizeIssuesFromStatus(status) {
       report_category: "bug",
       action_view: "settings",
     });
-  } else if (exportBlock.stale) {
-    const age = exportBlock.age_seconds;
-    const ageText = typeof age === "number" ? `${Math.round(age)} seconds` : "a while";
-    issues.push({
-      id: "export_stale",
-      severity: "warn",
-      title: "City export is stale",
-      detail: `Last snapshot was received ${ageText} ago.`,
-      hint: "Load your city in CS2 and keep the game running.",
-      ask_prompt: "Why is my city data stale and how do I refresh it?",
-      report_category: "bug",
-    });
   }
   const knowledge = status.knowledge || {};
   const enc = knowledge.encyclopedia || {};
@@ -327,7 +315,7 @@ function renderHealthStrip(status, blockingCount = 0) {
     return;
   }
 
-  const exportOk = status.export && !status.export.stale;
+  const exportReady = Boolean(status.export && !status.export.corrupt);
   const encOk = status.knowledge?.encyclopedia?.available;
   const notes = infoIssueCount(lastIssues);
 
@@ -341,7 +329,7 @@ function renderHealthStrip(status, blockingCount = 0) {
   el.classList.add("clickable");
   el.onclick = () => switchView("issues");
 
-  if (!exportOk && !encOk && blockingCount > 0) {
+  if (!exportReady && !encOk && blockingCount > 0) {
     el.textContent = "Setup needed";
     el.classList.add("bad");
     return;

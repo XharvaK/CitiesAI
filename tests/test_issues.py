@@ -36,10 +36,10 @@ def test_collect_issues_corrupt_export() -> None:
     assert any(i["id"] == "export_corrupt" for i in issues)
 
 
-def test_collect_issues_stale_export_and_signal() -> None:
+def test_collect_issues_stale_export_not_listed_and_signal() -> None:
     status = {
-        "ok": False,
-        "issue_count": 1,
+        "ok": True,
+        "issue_count": 0,
         "mod_installed": True,
         "paths": {
             "game_dir": {"ok": True},
@@ -57,9 +57,9 @@ def test_collect_issues_stale_export_and_signal() -> None:
     }
     issues = collect_issues(status, metrics)
     ids = {issue["id"] for issue in issues}
-    assert "export_stale" in ids
+    assert "export_stale" not in ids
     assert "signal_mobility" in ids
-    assert blocking_issue_count(issues) >= 1
+    assert blocking_issue_count(issues) == 0
 
 
 def test_collect_issues_maps_signal_to_plain_language() -> None:

@@ -55,8 +55,6 @@ def collect_status_report(cfg: CitiesAIConfig | None = None) -> dict[str, Any]:
                 "age_seconds": meta.age_seconds,
                 "stale": meta.stale,
             }
-            if meta.stale:
-                issues += 1
 
     knowledge_block: dict[str, Any]
     try:
