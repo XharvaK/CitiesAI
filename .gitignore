@@ -1,0 +1,21 @@
+# CitiesAI
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+packaging/bundled/CS2DataExport/
+
+# Local / machine-specific
+unity-install.log
+unity-releases.txt
+.env
+.env.*
+
+# Editor
+.vscode/
+.idea/

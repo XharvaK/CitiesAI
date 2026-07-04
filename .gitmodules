@@ -1,0 +1,3 @@
+[submodule "vendor/Cities2-DataExport"]
+	path = vendor/Cities2-DataExport
+	url = https://github.com/mayor-modder/Cities2-DataExport.git

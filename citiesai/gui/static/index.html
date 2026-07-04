@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="utf-8" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <title>CitiesAI</title>
+
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
+  <link rel="icon" href="/static/logo.png" type="image/png" sizes="512x512" />
+  <link rel="apple-touch-icon" href="/static/logo.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+
+</head>
+
+<body>
+
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+
+
+  <div id="onboarding" class="onboarding" hidden>
+
+    <div class="onboarding-card">
+
+      <div class="onboarding-progress">
+
+        <div id="onboarding-bar" class="onboarding-bar"></div>
+
+      </div>
+
+      <div id="onboarding-body" class="onboarding-body">
+
+        <h2>Welcome to CitiesAI</h2>
+
+        <p>Your read-only advisor for <strong>Cities: Skylines II</strong>. See live city stats and ask grounded questions. We never touch your save.</p>
+
+      </div>
+
+      <div class="onboarding-actions">
+
+        <button type="button" id="onboarding-skip" class="btn ghost">Skip setup</button>
+
+        <button type="button" id="onboarding-back" class="btn ghost" hidden>Back</button>
+
+        <button type="button" id="onboarding-next" class="btn primary">Continue</button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+
+  <div class="app">
+
+    <aside class="sidebar">
+
+      <div class="brand">
+
+        <img src="/static/logo.png" alt="" class="brand-icon" width="36" height="36" />
+
+        <div>
+
+          <div class="brand-title">CitiesAI</div>
+
+          <div class="brand-sub">City advisor for CS2</div>
+
+        </div>
+
+      </div>
+
+      <nav class="nav" role="tablist">
+
+        <button class="nav-item active" data-view="dashboard" role="tab">Dashboard</button>
+
+        <button class="nav-item" data-view="issues" role="tab">Issues</button>
+
+        <button class="nav-item" data-view="ask" role="tab">Ask</button>
+
+        <button class="nav-item" data-view="settings" role="tab">Settings</button>
+
+        <button class="nav-item" data-view="feedback" role="tab">Feedback</button>
+
+      </nav>
+
+      <div class="sidebar-foot">
+
+        <button type="button" id="health-strip" class="health-strip">Checking…</button>
+
+        <div id="app-version" class="muted small"></div>
+
+      </div>
+
+    </aside>
+
+
+
+    <main class="main">
+
+      <section id="view-dashboard" class="view active">
+
+        <header class="view-header">
+
+          <div>
+
+            <h1 id="hero-title">Your city</h1>
+
+            <p id="hero-sub" class="muted">Waiting for export…</p>
+
+          </div>
+
+          <div class="hero-actions">
+
+            <span id="freshness-pill" class="pill">...</span>
+
+            <button type="button" id="refresh-dashboard" class="btn secondary">Refresh</button>
+
+          </div>
+
+        </header>
+
+        <div id="metric-grid" class="metric-grid"></div>
+
+        <details class="details-panel">
+
+          <summary>Technical details &amp; paths</summary>
+
+          <pre id="brief-technical" class="mono-block"></pre>
+
+        </details>
+
+      </section>
+
+
+
+      <section id="view-issues" class="view" hidden>
+
+        <header class="view-header">
+
+          <div>
+
+            <h1>Issues</h1>
+
+            <p class="muted">Setup problems and city alerts that may affect advice</p>
+
+          </div>
+
+        </header>
+
+        <div id="issues-list" class="issues-list"></div>
+
+      </section>
+
+
+
+      <section id="view-ask" class="view" hidden>
+
+        <header class="view-header ask-header">
+          <div>
+            <h1>Ask CitiesAI</h1>
+            <p class="muted">Grounded in your city numbers + wiki knowledge</p>
+          </div>
+          <button type="button" id="clear-chat" class="btn ghost">Clear chat</button>
+        </header>
+
+        <div id="suggestions" class="suggestions"></div>
+
+        <div id="chat-log" class="chat-log"></div>
+
+        <form id="ask-form" class="ask-bar">
+          <div class="composer">
+            <textarea id="question" rows="2" placeholder="What should I fix in my budget?"></textarea>
+          </div>
+
+          <div class="ask-bar-actions">
+
+            <p id="ask-helper" class="ask-helper muted small"></p>
+
+            <button type="submit" class="btn primary" id="ask-submit">Send</button>
+
+          </div>
+
+        </form>
+
+      </section>
+
+
+
+      <section id="view-settings" class="view" hidden>
+
+        <header class="view-header">
+
+          <div>
+
+            <h1>Settings</h1>
+
+            <p class="muted">Paths, mod, and optional AI key</p>
+
+          </div>
+
+        </header>
+
+        <div class="settings-grid">
+
+          <article class="card settings-paths">
+            <div class="card-header">
+              <h2>Game paths</h2>
+              <p class="muted small">Detected automatically from Steam or Game Pass installs.</p>
+            </div>
+            <form id="settings-form" class="form-stack">
+              <label class="field"><span class="field-label">Discovery</span><input id="setup-source" class="path-input control" readonly /></label>
+              <label class="field"><span class="field-label">Game folder</span><input id="setup-game" class="path-input control" /></label>
+              <label class="field"><span class="field-label">Locale.cok</span><input id="setup-locale" class="path-input control" /></label>
+              <label class="field"><span class="field-label">Export path</span><input id="setup-export" class="path-input control" /></label>
+            </form>
+
+            <div class="card-actions">
+
+              <button type="button" id="redetect-paths" class="btn secondary">Re-detect</button>
+
+              <button type="button" id="save-setup" class="btn primary">Save paths</button>
+
+            </div>
+
+          </article>
+
+          <article class="card settings-mod">
+            <div class="card-header">
+              <h2>Data export mod</h2>
+              <p class="muted small">Close CS2 first if install fails.</p>
+            </div>
+            <span id="mod-status" class="status-badge">Checking…</span>
+
+            <div class="card-actions">
+
+              <button type="button" id="install-mod" class="btn primary">Install mod</button>
+
+            </div>
+
+          </article>
+
+          <article class="card settings-ai">
+            <div class="card-header">
+              <h2>AI answers</h2>
+              <p class="muted small">Optional. Free tier at <a href="https://console.mistral.ai" target="_blank" rel="noopener">console.mistral.ai</a>. Key stays on your PC.</p>
+            </div>
+            <div class="form-stack">
+              <label class="field"><span class="field-label">Model</span><input id="setup-model" class="control" placeholder="mistral-medium-latest" /></label>
+              <label class="field"><span class="field-label">API key</span><input id="api-key" class="control" type="password" placeholder="Paste Mistral API key" autocomplete="off" /></label>
+            </div>
+            <div class="card-actions">
+              <button type="button" id="test-key" class="btn secondary">Test key</button>
+              <button type="button" id="save-key" class="btn primary">Save key</button>
+            </div>
+            <div class="key-status-row">
+              <span id="key-status" class="key-status-pill muted">No API key saved</span>
+            </div>
+          </article>
+
+        </div>
+
+      </section>
+
+
+
+      <section id="view-feedback" class="view" hidden>
+
+        <header class="view-header">
+
+          <div>
+
+            <h1>Feedback</h1>
+
+            <p class="muted">Help improve CitiesAI during beta</p>
+
+          </div>
+
+        </header>
+
+        <div class="feedback-layout">
+
+          <aside class="feedback-aside card">
+
+            <h2>What to send</h2>
+
+            <p class="muted">Report bugs, confusing UI, wrong answers, or feature ideas. We read every submission during beta.</p>
+
+            <p class="muted">Feedback is sent to the beta Discord when configured, and always saved locally on your PC.</p>
+
+            <p id="feedback-issues-link" class="feedback-issues-link" hidden>
+
+              <button type="button" class="link-btn" data-view-jump="issues">View open issues</button>
+
+            </p>
+
+            <p class="muted small">Optional system info includes app version and export freshness only. No city save data.</p>
+
+          </aside>
+
+          <form id="feedback-form" class="card feedback-form">
+
+            <h2>Send feedback</h2>
+
+            <div class="segmented" role="group" aria-label="Category">
+
+              <button type="button" class="segment active" data-category="bug">Bug</button>
+
+              <button type="button" class="segment" data-category="ux">UX</button>
+
+              <button type="button" class="segment" data-category="wrong-answer">Wrong answer</button>
+
+              <button type="button" class="segment" data-category="feature">Feature</button>
+
+              <button type="button" class="segment" data-category="general">General</button>
+
+            </div>
+
+            <input type="hidden" id="feedback-category" value="bug" />
+
+            <label class="field"><span class="field-label">Message</span><textarea id="feedback-message" class="control" rows="5" required placeholder="Describe what happened or what you expected…"></textarea></label>
+
+            <input id="feedback-contact" class="control feedback-contact-input" type="text" placeholder="Discord username or email (optional)" autocomplete="off" />
+
+            <div class="feedback-footer">
+              <label class="checkbox">
+                <input type="checkbox" id="feedback-system" checked />
+                Attach anonymous system info
+              </label>
+              <button type="submit" class="btn primary">Send feedback</button>
+            </div>
+
+            <div id="feedback-success" class="feedback-success" hidden></div>
+
+          </form>
+
+        </div>
+
+      </section>
+
+    </main>
+
+  </div>
+
+  <script src="/static/app.js"></script>
+
+</body>
+
+</html>
+
+
