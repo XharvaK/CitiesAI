@@ -22,7 +22,7 @@ VENDOR_SAMPLE = (
 
 
 def test_version() -> None:
-    assert __version__ == "0.1.0"
+    assert __version__ == "0.1.1"
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     assert data["project"]["version"] == __version__
@@ -30,7 +30,7 @@ def test_version() -> None:
 
 def test_api_version() -> None:
     data = api_version()
-    assert data["version"] == "0.1.0"
+    assert data["version"] == "0.1.1"
 
 
 def test_collect_status_report_shape() -> None:
@@ -95,6 +95,13 @@ def test_save_env_var(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = save_env_var("TEST_KEY", "secret")
     assert path.is_file()
     assert "TEST_KEY" in path.read_text(encoding="utf-8")
+
+
+def test_api_install_mod_accepts_post_body() -> None:
+    from citiesai.gui.api import api_install_mod
+
+    result = api_install_mod({})
+    assert "ok" in result
 
 
 def test_feedback_local_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

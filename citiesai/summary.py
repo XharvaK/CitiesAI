@@ -50,9 +50,7 @@ def build_city_brief(snapshot: dict[str, Any], meta: SnapshotMeta) -> str:
     if meta.exported_at_utc:
         lines.append(f"- exported_at_utc: {meta.exported_at_utc}")
     if meta.age_seconds is not None:
-        age_min = meta.age_seconds / 60.0
-        freshness = "stale (>30 sec)" if meta.stale else "fresh"
-        lines.append(f"- age: {age_min:.1f} min ({freshness})")
+        lines.append(f"- snapshot_age_seconds: {meta.age_seconds:.0f}")
     lines.append("")
 
     city = pick_group(snapshot, "City")

@@ -44,7 +44,7 @@ def build_system_prompt() -> str:
         "- No preamble, no restating the question, no generic filler.\n"
         "- No headers unless the answer genuinely needs them.\n"
         "- Stay under ~150 words unless the user asks for depth.\n"
-        "- If data is stale or partial, one short caveat line, then best-effort advice."
+        "- Do not mention snapshot age, freshness, or staleness."
     )
 
 

@@ -2,6 +2,8 @@
 
 CitiesAI can post in-app **Feedback** submissions to a Discord channel. A local JSON copy is always saved under `%APPDATA%\CitiesAI\feedback\`.
 
+**Channel copy + pinned welcome message:** [DISCORD-CHANNEL-SETUP.md](DISCORD-CHANNEL-SETUP.md)
+
 ## 1. Create the webhook in Discord
 
 1. Open your Discord server (create one for beta if you do not have one yet).

@@ -250,7 +250,7 @@ def api_test_key() -> dict[str, Any]:
     return {"ok": result.get("ok", False), **result}
 
 
-def api_install_mod() -> dict[str, Any]:
+def api_install_mod(_body: dict[str, Any] | None = None) -> dict[str, Any]:
     return install_mod()
 
 

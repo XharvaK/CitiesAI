@@ -131,7 +131,10 @@ def submit_feedback(
     request = urllib.request.Request(
         webhook,
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": f"CitiesAI/{__version__} (feedback; +https://github.com/XharvaK/CitiesAI)",
+        },
         method="POST",
     )
     try:

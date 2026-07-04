@@ -15,7 +15,7 @@ You do **not** need Python, Unity, or modding experience. The installer includes
 
 ## Install
 
-1. Download `CitiesAI-Setup-0.1.0.exe` from [Releases](https://github.com/XharvaK/CitiesAI/releases) (or the link Doc shared).
+1. Download `CitiesAI-Setup-0.1.1.exe` from [Releases](https://github.com/XharvaK/CitiesAI/releases) (or the link Doc shared).
 2. Run the installer (per-user, no admin).
 3. Launch **CitiesAI** from Start Menu. The app opens in its own window (not your browser).
 4. Complete the onboarding wizard (or click **Skip setup** if you are already configured):

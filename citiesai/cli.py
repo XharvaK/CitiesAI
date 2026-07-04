@@ -88,7 +88,7 @@ def _cmd_ask(args: argparse.Namespace) -> int:
         print("## Answer guidance")
         print(
             "Synthesize one practical answer using the city brief numbers first, then wiki and "
-            "encyclopedia evidence. Call out stale snapshot data if age > 30 sec. Cite sources."
+            "encyclopedia evidence. Cite sources."
         )
         return 0
 
