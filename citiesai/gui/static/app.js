@@ -1091,9 +1091,13 @@ $("feedback-form").addEventListener("submit", async (e) => {
     const msg =
       data.mode === "discord"
         ? "Thanks! Your feedback was sent to the beta channel."
-        : `Thanks! Saved locally at ${data.saved_to}`;
+        : data.hint
+          ? `${data.hint} Local copy: ${data.saved_to}`
+          : `Thanks! Saved locally at ${data.saved_to}`;
     if (data.warning) {
       toast(String(data.warning), "err");
+    } else if (data.hint && data.mode === "local") {
+      toast(String(data.hint), "err");
     }
     success.hidden = false;
     success.innerHTML = `<span class="feedback-success-icon">✓</span><p>${escapeHtml(msg)}</p>`;

@@ -105,6 +105,20 @@ def test_feedback_local_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert result["mode"] == "local"
 
 
+def test_read_webhook_file_strips_utf8_bom(tmp_path: Path) -> None:
+    from citiesai.feedback import _read_webhook_file
+
+    path = tmp_path / "feedback_webhook.url"
+    path.write_bytes(
+        bytes([0xEF, 0xBB, 0xBF])
+        + b"https://discord.com/api/webhooks/1234567890/test-token"
+    )
+    assert (
+        _read_webhook_file(path)
+        == "https://discord.com/api/webhooks/1234567890/test-token"
+    )
+
+
 def test_load_config_migrates_legacy_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from citiesai import config as config_mod
 

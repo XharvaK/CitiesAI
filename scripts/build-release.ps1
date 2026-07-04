@@ -48,7 +48,8 @@ if ($WebhookUrl) {
     if ($WebhookUrl -notmatch '^https://discord\.com/api/webhooks/') {
         throw 'CITIESAI_DISCORD_WEBHOOK must start with https://discord.com/api/webhooks/'
     }
-    Set-Content -LiteralPath $WebhookBundle -Value $WebhookUrl -Encoding utf8 -NoNewline
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($WebhookBundle, $WebhookUrl, $utf8NoBom)
     Write-Host "Bundled Discord webhook for release: $WebhookBundle" -ForegroundColor Green
 } elseif (Test-Path -LiteralPath $WebhookBundle) {
     Write-Host "Keeping existing bundled webhook: $WebhookBundle" -ForegroundColor Green

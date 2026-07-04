@@ -27,8 +27,8 @@ def _read_webhook_file(path: Path) -> str | None:
     if not path.is_file():
         return None
     try:
-        line = path.read_text(encoding="utf-8").strip()
-    except OSError:
+        line = path.read_bytes().decode("utf-8-sig").strip().lstrip("\ufeff")
+    except (OSError, UnicodeDecodeError):
         return None
     if line.startswith("https://discord.com/api/webhooks/"):
         return line
