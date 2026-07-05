@@ -13,8 +13,12 @@ THRESHOLDS: dict[str, float | int] = {
     "employment_low": 85,
     "congestion_warn": 0.5,
     "city_service_fill_low": 80,
-    "homeless_warn": 1,
-    "moving_away_warn": 1,
+    "homeless_share_warn": 0.001,
+    "homeless_abs_min": 5,
+    "moving_away_share_warn": 0.005,
+    "moving_away_abs_min": 10,
+    "unemployed_share_warn": 0.01,
+    "unemployed_abs_min": 10,
 }
 
 _SEMANTIC_PARTIAL_COPY: dict[str, dict[str, str]] = {
@@ -45,6 +49,12 @@ def _num(value: Any) -> float | int | None:
     if isinstance(value, (int, float)):
         return value
     return None
+
+
+def _scaled_threshold(residents: float | int | None, share: float, absolute_min: float | int) -> float:
+    if residents is None or residents <= 0:
+        return float(absolute_min)
+    return max(float(absolute_min), float(residents) * share)
 
 
 def _city_issue(
@@ -214,7 +224,8 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     official = pick_group(snapshot, "OfficialCityStatistics")
     social = pick_group(official, "Social")
     finance = pick_group(official, "Finance")
-    services = pick_group(official, "Services")
+    city_services = pick_group(official, "CityServices")
+    population_flow = pick_group(official, "PopulationFlow")
 
     residents = resident_population(snapshot)
 
@@ -227,12 +238,23 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
         population=residents,
     )
     homeless = _num(pick(social, "HomelessCount", "homeless_count"))
-    moving_away = _num(pick(social, "CitizensMovedAway", "citizens_moved_away"))
+    moving_away = _num(
+        pick(population_flow, "CitizensMovedAway", "citizens_moved_away")
+    )
 
     if homeless is None:
         homeless = _num(pick(population, "HomelessPopulation", "homeless_population"))
     if moving_away is None:
-        moving_away = _num(pick(population, "MovingAwayPopulation", "moving_away_population"))
+        household_ctx = pick_group(snapshot, "HouseholdPressureContext")
+        share = _num(
+            pick(household_ctx, "MovingAwayHouseholdSharePercent", "moving_away_household_share_percent")
+        )
+        if share is not None and residents is not None and residents > 0:
+            moving_away = int(residents * share / 100)
+        else:
+            moving_away = _num(
+                pick(population, "MovingAwayPopulation", "moving_away_population")
+            )
 
     income = _num(pick(finance, "Income", "income"))
     expense = _num(pick(finance, "Expense", "expense"))
@@ -250,8 +272,10 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     utility = pick_group(snapshot, "UtilityPressureSemantics")
     city_service_fill = _num(pick(utility, "CityServiceFillPercent", "city_service_fill_percent"))
     if city_service_fill is None:
-        workers = _num(pick(services, "CityServiceWorkers", "city_service_workers"))
-        max_workers = _num(pick(services, "CityServiceMaxWorkers", "city_service_max_workers"))
+        workers = _num(pick(city_services, "CityServiceWorkers", "city_service_workers"))
+        max_workers = _num(
+            pick(city_services, "CityServiceMaxWorkers", "city_service_max_workers")
+        )
         if workers is not None and max_workers and max_workers > 0:
             city_service_fill = workers * 100.0 / max_workers
 
@@ -295,7 +319,12 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
-    if homeless is not None and homeless >= THRESHOLDS["homeless_warn"]:
+    homeless_threshold = _scaled_threshold(
+        residents,
+        float(THRESHOLDS["homeless_share_warn"]),
+        int(THRESHOLDS["homeless_abs_min"]),
+    )
+    if homeless is not None and homeless >= homeless_threshold:
         issues.append(
             _city_issue(
                 "city_homeless",
@@ -306,7 +335,12 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
-    if moving_away is not None and moving_away >= THRESHOLDS["moving_away_warn"]:
+    moving_threshold = _scaled_threshold(
+        residents,
+        float(THRESHOLDS["moving_away_share_warn"]),
+        int(THRESHOLDS["moving_away_abs_min"]),
+    )
+    if moving_away is not None and moving_away >= moving_threshold:
         issues.append(
             _city_issue(
                 "city_leaving",
@@ -333,9 +367,14 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
+    unemployed_threshold = _scaled_threshold(
+        residents,
+        float(THRESHOLDS["unemployed_share_warn"]),
+        int(THRESHOLDS["unemployed_abs_min"]),
+    )
     employment_low = (
         employment is not None and employment < THRESHOLDS["employment_low"]
-    ) or (unemployed is not None and unemployed >= 10)
+    ) or (unemployed is not None and unemployed >= unemployed_threshold)
     if employment_low:
         detail_parts: list[str] = []
         if employment is not None:

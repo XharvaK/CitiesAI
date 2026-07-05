@@ -120,3 +120,26 @@ def build_mayors_briefing(
         },
         "text": text,
     }
+
+
+def build_city_briefing_card(
+    *,
+    digest: dict[str, Any],
+    resolved: list[dict[str, Any]],
+    grade_deltas: list[dict[str, Any]],
+    forecasts: dict[str, Any],
+    priorities: list[dict[str, Any]],
+) -> dict[str, Any]:
+    since_last_session = list(digest.get("summary") or []) if digest.get("has_changes") else []
+    forecast_alerts = list(forecasts.get("alerts") or [])[:3]
+    has_content = bool(
+        since_last_session or priorities or resolved or grade_deltas or forecast_alerts
+    )
+    return {
+        "has_content": has_content,
+        "since_last_session": since_last_session,
+        "priorities": priorities,
+        "resolved": resolved,
+        "grade_deltas": grade_deltas,
+        "forecast_alerts": forecast_alerts,
+    }

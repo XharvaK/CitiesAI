@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -13,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .config import config_dir, load_config
 from .version import __version__
@@ -24,6 +26,13 @@ RELEASES_PAGE_URL = f"https://github.com/{GITHUB_REPO}/releases"
 INSTALLER_PREFIX = "CitiesAI-Setup-"
 INSTALLER_SUFFIX = ".exe"
 CHECK_CACHE_HOURS = 6
+ALLOWED_DOWNLOAD_HOSTS = frozenset(
+    {
+        "github.com",
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+    }
+)
 
 _cache_lock = threading.Lock()
 _cached_result: dict[str, Any] | None = None
@@ -376,24 +385,52 @@ def updates_dir() -> Path:
     return path
 
 
+def _validate_download_url(download_url: str) -> None:
+    if not download_url.startswith("https://"):
+        raise ValueError("Installer download URL must use HTTPS.")
+    host = urlparse(download_url).netloc.lower()
+    if host not in ALLOWED_DOWNLOAD_HOSTS:
+        raise ValueError(f"Installer download host not allowed: {host}")
+
+
 def download_installer(
     *,
     download_url: str,
     installer_name: str,
     expected_size: int | None = None,
+    expected_sha256: str | None = None,
 ) -> Path:
-    if not download_url.startswith("https://"):
-        raise ValueError("Installer download URL must use HTTPS.")
+    _validate_download_url(download_url)
     if not installer_name.startswith(INSTALLER_PREFIX) or not installer_name.endswith(INSTALLER_SUFFIX):
         raise ValueError("Unexpected installer filename.")
 
     target = updates_dir() / installer_name
-    request = urllib.request.Request(download_url, headers=_github_headers(use_token=bool(os.environ.get("GITHUB_TOKEN"))), method="GET")
-    with urllib.request.urlopen(request, timeout=120) as response:
-        data = response.read()
-    if expected_size is not None and len(data) != expected_size:
+    partial = target.with_suffix(target.suffix + ".partial")
+    request = urllib.request.Request(
+        download_url,
+        headers=_github_headers(use_token=bool(os.environ.get("GITHUB_TOKEN"))),
+        method="GET",
+    )
+    digest = hashlib.sha256()
+    total = 0
+    with urllib.request.urlopen(request, timeout=120) as response, partial.open("wb") as handle:
+        while True:
+            chunk = response.read(65536)
+            if not chunk:
+                break
+            digest.update(chunk)
+            handle.write(chunk)
+            total += len(chunk)
+    if expected_size is not None and total != expected_size:
+        partial.unlink(missing_ok=True)
         raise RuntimeError("Downloaded installer size does not match the GitHub release asset.")
-    target.write_bytes(data)
+    actual_hash = digest.hexdigest()
+    if expected_sha256 and actual_hash.lower() != expected_sha256.lower():
+        partial.unlink(missing_ok=True)
+        raise RuntimeError("Downloaded installer SHA256 does not match the release checksum.")
+    partial.replace(target)
+    sidecar = target.with_suffix(target.suffix + ".sha256")
+    sidecar.write_text(actual_hash + "\n", encoding="utf-8")
     return target
 
 

@@ -6,80 +6,16 @@ import json
 import sys
 from typing import Any
 
-from .briefing import build_mayors_briefing
-from .city_issues import detect_city_issues
 from .config import apply_config_to_env, load_config
-from .constants import HISTORY_MAX_POINTS
-from .forecasts import build_forecasts
-from .historian import get_historian
-from .report_ops import build_and_persist_report_card
-from .snapshot import load_snapshot_safe, pick_group, snapshot_meta
-from .summary import build_city_brief
+from .snapshot import load_snapshot_safe, snapshot_meta
+from .tool_registry import execute_registered_tool, mcp_tool_definitions
 from .version import __version__
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "citiesai"
 SERVER_VERSION = __version__
 
-TOOLS = [
-    {
-        "name": "get_city_brief",
-        "description": "Markdown brief of the current city snapshot.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "get_metric_group",
-        "description": "Return a top-level export group by name.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"group": {"type": "string"}},
-            "required": ["group"],
-        },
-    },
-    {
-        "name": "detect_issues",
-        "description": "Rule-based city pressure and issue detection.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "get_history",
-        "description": "Persistent metric history for the current city.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"limit": {"type": "integer", "minimum": 2, "maximum": HISTORY_MAX_POINTS}},
-        },
-    },
-    {
-        "name": "get_report_card",
-        "description": "Letter grades per city domain.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "get_forecasts",
-        "description": "Trend forecasts and alerts from recent history.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "get_access_gaps",
-        "description": "Transit access gap hotspots and next-line recommendations.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "get_demand_factors",
-        "description": "RCI demand bars and negative factor breakdown.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "get_utilities_services",
-        "description": "Electricity, garbage, and service coverage signals.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "get_mayors_briefing",
-        "description": "Session-start briefing with digest, priorities, and grade deltas.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-]
+TOOLS = mcp_tool_definitions()
 
 
 def _load_live() -> tuple[dict[str, Any], Any]:
@@ -97,53 +33,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
     if name not in known:
         raise ValueError(f"Unknown tool: {name}")
     snapshot, meta = _load_live()
-    if name == "get_city_brief":
-        return build_city_brief(snapshot, meta)
-    if name == "get_metric_group":
-        group = str(arguments.get("group", ""))
-        return json.dumps(pick_group(snapshot, group), ensure_ascii=False, indent=2)
-    if name == "detect_issues":
-        return json.dumps(detect_city_issues(snapshot), ensure_ascii=False, indent=2)
-    if name == "get_history":
-        limit = int(arguments.get("limit", 50))
-        limit = max(2, min(limit, HISTORY_MAX_POINTS))
-        historian = get_historian()
-        historian.sync()
-        return json.dumps(historian.get_history(limit=limit), ensure_ascii=False, indent=2)
-    if name == "get_report_card":
-        historian = get_historian()
-        historian.sync()
-        return json.dumps(
-            build_and_persist_report_card(snapshot, meta, historian=historian),
-            ensure_ascii=False,
-            indent=2,
-        )
-    if name == "get_forecasts":
-        historian = get_historian()
-        historian.sync()
-        history = historian.get_history(limit=HISTORY_MAX_POINTS)
-        return json.dumps(build_forecasts(history), ensure_ascii=False, indent=2)
-    if name == "get_access_gaps":
-        from .analyzers.access_gaps import analyze_access_gaps
-
-        return json.dumps(analyze_access_gaps(snapshot), ensure_ascii=False, indent=2)
-    if name == "get_demand_factors":
-        from .analyzers.demand_factors import analyze_demand_factors
-
-        return json.dumps(analyze_demand_factors(snapshot), ensure_ascii=False, indent=2)
-    if name == "get_utilities_services":
-        from .analyzers.utilities_services import analyze_utilities_services
-
-        return json.dumps(analyze_utilities_services(snapshot), ensure_ascii=False, indent=2)
-    if name == "get_mayors_briefing":
-        historian = get_historian()
-        historian.sync()
-        return json.dumps(
-            build_mayors_briefing(snapshot, meta, historian=historian),
-            ensure_ascii=False,
-            indent=2,
-        )
-    raise ValueError(f"Unknown tool: {name}")
+    return execute_registered_tool(name, arguments, snapshot=snapshot, meta=meta)
 
 
 def _handle_request(request: dict[str, Any]) -> dict[str, Any] | None:

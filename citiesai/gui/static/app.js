@@ -1,4 +1,8 @@
 const POLL_MS = 5000;
+const STALE_AFTER_SECONDS = 15;
+const ASK_TIMEOUT_MS = 480000;
+let activeAskAbort = null;
+let activeAskGeneration = 0;
 const STATUS_POLL_INTERVALS = 6;
 const ASK_SUBMIT_LABEL = "Send";
 
@@ -69,8 +73,19 @@ function $(id) {
   return document.getElementById(id);
 }
 
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
+function sessionToken() {
+  return document.querySelector('meta[name="citiesai-token"]')?.content || "";
+}
+
+async function fetchJson(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (options.method && options.method !== "GET") {
+    headers["X-CitiesAI-Token"] = sessionToken();
+  }
+  if (options.body && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+  const response = await fetch(url, { ...options, headers });
   let data = {};
   try {
     data = await response.json();
@@ -186,7 +201,7 @@ function formatAge(seconds) {
 
 function freshnessCountdown(ageSeconds) {
   if (ageSeconds == null) return null;
-  return Math.max(0, 30 - ageSeconds);
+  return Math.max(0, STALE_AFTER_SECONDS - ageSeconds);
 }
 
 function safeHttpUrl(url) {
@@ -454,8 +469,16 @@ function askFromPrompt(prompt) {
 }
 
 function gradeClass(grade) {
-  if (grade === "N/A") return "grade-NA";
-  return `grade-${grade}`;
+  const safe = String(grade || "NA").replace(/[^A-Za-z0-9/-]/g, "");
+  if (safe === "NA" || safe === "N/A") return "grade-NA";
+  return `grade-${safe}`;
+}
+
+function renderGradeBadge(grade, options = {}) {
+  const label = String(grade || "—");
+  const cls = gradeClass(label);
+  const aria = options.ariaLabel || `Grade ${label}`;
+  return `<span class="grade-badge ${cls}" aria-label="${escapeAttr(aria)}">${escapeHtml(label)}</span>`;
 }
 
 const modalTrapCleanups = new WeakMap();
@@ -959,108 +982,6 @@ function closeDiagnosticsModal() {
   }
 }
 
-function sessionDigestFingerprint(digest) {
-  const summary = (digest.summary || []).join("|");
-  const resolved = (digest.resolved || []).map((item) => item.title || item.id || "").join("|");
-  return `${digest.session_boundary || ""}::${summary}::${resolved}`;
-}
-
-function isSessionDigestDismissed(fingerprint) {
-  try {
-    return localStorage.getItem("citiesai:dismiss-session-digest") === fingerprint;
-  } catch {
-    return false;
-  }
-}
-
-function dismissSessionDigest(fingerprint) {
-  try {
-    localStorage.setItem("citiesai:dismiss-session-digest", fingerprint);
-  } catch {
-    /* ignore quota errors */
-  }
-  const el = $("session-digest");
-  if (el) {
-    el.hidden = true;
-    el.innerHTML = "";
-  }
-}
-
-function renderSessionDigest(digest) {
-  const digestEl = $("session-digest");
-  if (!digestEl) return;
-
-  let copyHtml = "";
-  if (digest && digest.has_changes && digest.summary && digest.summary.length) {
-    const resolvedLine =
-      digest.resolved?.length
-        ? ` · <strong>Resolved:</strong> ${digest.resolved.map((item) => `${escapeHtml(item.title)} ✓`).join(" · ")}`
-        : "";
-    copyHtml = `<strong>Since last session:</strong> ${digest.summary.map((s) => escapeHtml(s)).join(" · ")}${resolvedLine}`;
-  } else if (digest?.resolved?.length) {
-    copyHtml = `<strong>Resolved since last session:</strong> ${digest.resolved
-      .map((item) => `${escapeHtml(item.title)} ✓`)
-      .join(" · ")}`;
-  } else {
-    digestEl.hidden = true;
-    digestEl.innerHTML = "";
-    return;
-  }
-
-  const fingerprint = sessionDigestFingerprint(digest);
-  if (isSessionDigestDismissed(fingerprint)) {
-    digestEl.hidden = true;
-    digestEl.innerHTML = "";
-    return;
-  }
-
-  digestEl.hidden = false;
-  digestEl.innerHTML = `
-    <div class="digest-banner-copy">${copyHtml}</div>
-    <div class="digest-banner-actions">
-      <button type="button" class="btn ghost btn-sm session-digest-dismiss">Dismiss</button>
-    </div>
-  `;
-  digestEl.querySelector(".session-digest-dismiss")?.addEventListener("click", () => {
-    dismissSessionDigest(fingerprint);
-  });
-}
-
-function renderMayorsBriefing(briefing) {
-  const el = $("mayors-briefing");
-  if (!el) return;
-  if (!briefing || !briefing.has_content) {
-    el.hidden = true;
-    el.innerHTML = "";
-    return;
-  }
-  const parts = [];
-  if (briefing.top_issues?.length) {
-    parts.push(
-      `<strong>Priorities:</strong> ${briefing.top_issues
-        .slice(0, 3)
-        .map((issue) => escapeHtml(issue.title))
-        .join(" · ")}`
-    );
-  }
-  if (briefing.resolved?.length) {
-    parts.push(
-      `<strong>Resolved:</strong> ${briefing.resolved
-        .map((item) => `${escapeHtml(item.title)} ✓`)
-        .join(" · ")}`
-    );
-  }
-  if (briefing.grade_deltas?.length) {
-    parts.push(
-      `<strong>Grades:</strong> ${briefing.grade_deltas
-        .map((row) => `${escapeHtml(row.label)} ${escapeHtml(row.grade)} (${escapeHtml(row.delta)})`)
-        .join(" · ")}`
-    );
-  }
-  el.hidden = false;
-  el.innerHTML = `<div class="briefing-head"><strong>Mayor's briefing</strong></div>${parts.map((p) => `<p class="briefing-line">${p}</p>`).join("")}`;
-}
-
 function renderGradeHistoryChart(svg, gradeHistory) {
   if (!svg) return;
   const points = gradeHistory?.points || [];
@@ -1087,22 +1008,51 @@ function renderGradeHistoryChart(svg, gradeHistory) {
   svg.innerHTML = `<polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${coords}" />`;
 }
 
+
 function renderDemandFactorsCard(demandFactors) {
   if (!demandFactors?.ok) {
     return `<article class="card"><h2>RCI demand</h2><p class="muted">${escapeHtml(demandFactors?.summary || "Demand factor export unavailable.")}</p></article>`;
   }
   const rows = (demandFactors.zones || [])
-    .map(
-      (zone) => `<li class="finding-row severity-${escapeAttr(zone.severity || "info")}">
-        <div class="finding-copy"><strong>${escapeHtml(zone.label)}</strong> — ${escapeHtml(zone.detail)}</div>
+    .map((zone) => {
+      const pct = zone.demand_percent != null ? `${Math.round(zone.demand_percent)}%` : "—";
+      return `<li class="finding-row severity-${escapeAttr(zone.severity || "info")}">
+        <div class="finding-copy"><strong>${escapeHtml(zone.label)} · ${escapeHtml(pct)}</strong></div>
         <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(demandFactors.ask_prompt)}">Ask</button>
-      </li>`
-    )
+      </li>`;
+    })
     .join("");
   return `<article class="card">
     <h2>RCI demand</h2>
     <p class="muted">${escapeHtml(demandFactors.summary || "")}</p>
     <ul class="finding-list">${rows}</ul>
+  </article>`;
+}
+
+function renderAccessGapsCard(accessGaps) {
+  if (!accessGaps) {
+    return "";
+  }
+  if (!accessGaps.ok) {
+    return `<article class="card"><h2>Next line advisor</h2><p class="muted">${escapeHtml(accessGaps.summary || "Transit access gap data unavailable.")}</p></article>`;
+  }
+  const hotspots = (accessGaps.hotspots || []).slice(0, 5);
+  const rows = hotspots
+    .map(
+      (spot) => `<li class="finding-row severity-${escapeAttr(spot.severity || "warn")}">
+        <div class="finding-copy"><strong>${escapeHtml(spot.title || "Hotspot")}</strong> — ${escapeHtml(spot.detail || spot.suggestion || "Uncovered demand")}</div>
+        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(accessGaps.ask_prompt || "Where should my next transit line go?")}">Ask</button>
+      </li>`
+    )
+    .join("");
+  const capture = accessGaps.capture_note
+    ? `<p class="muted small">${escapeHtml(accessGaps.capture_note)}</p>`
+    : "";
+  return `<article class="card">
+    <h2>Next line advisor</h2>
+    <p class="muted">${escapeHtml(accessGaps.summary || "")}</p>
+    ${capture}
+    <ul class="finding-list">${rows || "<li class='muted'>No hotspots recorded yet — play with citizens traveling to populate trip capture.</li>"}</ul>
   </article>`;
 }
 
@@ -1205,6 +1155,11 @@ function attachAnswerFeedback(assistantEl, question, answer) {
 }
 
 async function clearAskUi() {
+  if (activeAskAbort) {
+    activeAskAbort.abort();
+    activeAskAbort = null;
+  }
+  activeAskGeneration += 1;
   $("chat-log").innerHTML = "";
   localStorage.removeItem("citiesai-chat");
   try {
@@ -1289,19 +1244,16 @@ function renderDashboard(data) {
 
   $("brief-technical").textContent = data.brief || "";
 
-  renderSessionDigest(data.session_digest);
-  renderMayorsBriefing(data.briefing);
-
   const cardStrip = $("report-card-strip");
   const card = data.report_card;
   if (card && card.domains) {
     cardStrip.hidden = false;
     cardStrip.innerHTML =
-      `<button type="button" class="report-overall ${gradeClass(card.overall_grade)}" title="Open Insights">Overall ${escapeHtml(card.overall_grade)}</button>` +
+      `<button type="button" class="report-overall" title="Open Insights"><span class="report-domain-label">Overall</span> ${renderGradeBadge(card.overall_grade)}</button>` +
       card.domains
         .map(
           (d) =>
-            `<button type="button" class="report-domain ${gradeClass(d.grade)}" title="${escapeAttr(d.detail || "")}">${escapeHtml(d.label)} ${escapeHtml(d.grade)}</button>`
+            `<button type="button" class="report-domain" title="${escapeAttr(d.detail || "")}"><span class="report-domain-label">${escapeHtml(d.label)}</span> ${renderGradeBadge(d.grade)}</button>`
         )
         .join("");
     cardStrip.onclick = (e) => {
@@ -1310,16 +1262,6 @@ function renderDashboard(data) {
   } else {
     cardStrip.hidden = true;
     cardStrip.innerHTML = "";
-  }
-
-  const forecastEl = $("forecast-alerts");
-  const alerts = (data.forecasts && data.forecasts.alerts) || [];
-  if (alerts.length) {
-    forecastEl.hidden = false;
-    forecastEl.innerHTML = alerts.map((a) => `<span class="forecast-pill">${escapeHtml(a)}</span>`).join("");
-  } else {
-    forecastEl.hidden = true;
-    forecastEl.innerHTML = "";
   }
 
   if (!$("metric-modal").hasAttribute("hidden") && metricModalReturnFocus) {
@@ -1464,6 +1406,10 @@ async function refreshIssues({ toastOnError = false } = {}) {
 async function loadDashboard() {
   if (refreshInFlight) return;
   refreshInFlight = true;
+  const grid = $("metric-grid");
+  if (grid && !lastDashboardData?.ok && !grid.querySelector(".metric-card")) {
+    grid.innerHTML = `<div class="skeleton"></div>`.repeat(6);
+  }
   try {
     const data = await fetchJson("/api/dashboard");
     pollErrorActive = false;
@@ -1478,6 +1424,11 @@ async function loadDashboard() {
       }
       if ($("view-issues").classList.contains("active")) {
         renderIssues(lastIssues);
+        if (data.resolved_history) {
+          renderResolvedIssues(data.resolved_history);
+        } else {
+          await refreshIssues(false);
+        }
       }
     } else {
       await refreshIssues();
@@ -1622,12 +1573,10 @@ function drainSseBuffer(buffer, handlers) {
   return remainder;
 }
 
-function askFetchSignal(timeoutMs = 180000) {
-  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
-    return AbortSignal.timeout(timeoutMs);
-  }
+function askFetchSignal(timeoutMs = ASK_TIMEOUT_MS) {
   const controller = new AbortController();
-  setTimeout(() => controller.abort(new DOMException("The operation timed out.", "TimeoutError")), timeoutMs);
+  const timer = setTimeout(() => controller.abort(new DOMException("The operation timed out.", "TimeoutError")), timeoutMs);
+  controller.signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
   return controller.signal;
 }
 
@@ -1639,7 +1588,25 @@ function resetAskSubmit() {
   askForm.setAttribute("aria-busy", "false");
 }
 
+function setAskBusy(active) {
+  const submitBtn = $("ask-submit");
+  if (!submitBtn) return;
+  if (active) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Sending…";
+    $("ask-form")?.setAttribute("aria-busy", "true");
+  } else {
+    resetAskSubmit();
+  }
+}
+
 async function askStream(question) {
+  if (activeAskAbort) {
+    activeAskAbort.abort();
+  }
+  const generation = ++activeAskGeneration;
+  const controller = new AbortController();
+  activeAskAbort = controller;
   appendBubble("user", escapeHtml(question));
   const assistant = appendBubble(
     "assistant",
@@ -1651,14 +1618,14 @@ async function askStream(question) {
   let streamFailed = false;
   let streamFinished = false;
   let bodyReader = null;
-  const submitBtn = $("ask-submit");
-  submitBtn.disabled = true;
-  submitBtn.textContent = "Sending…";
-  $("ask-form").setAttribute("aria-busy", "true");
+  setAskBusy(true);
 
   const finishStream = () => {
     if (streamFinished) return;
     streamFinished = true;
+    if (activeAskAbort === controller) {
+      activeAskAbort = null;
+    }
     resetAskSubmit();
     scrollChatToBottom("smooth");
     if (bodyReader && typeof bodyReader.cancel === "function") {
@@ -1715,8 +1682,9 @@ async function askStream(question) {
             answerEl.innerHTML =
               `<span class="muted">No answer returned. Check Settings for your API key or try again.</span>`;
           }
-        } else {
+        } else if (generation === activeAskGeneration) {
           attachAnswerFeedback(assistant, question, answer);
+          saveChatEntry(question, answer);
         }
         finishStream();
       }
@@ -1726,13 +1694,16 @@ async function askStream(question) {
   try {
     const response = await fetch("/api/ask/stream", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-CitiesAI-Token": sessionToken(),
+      },
       body: JSON.stringify({
         question,
         use_llm: true,
         agentic: $("setup-agentic")?.checked !== false,
       }),
-      signal: askFetchSignal(),
+      signal: controller.signal,
     });
     if (!response.ok) {
       let message = "Ask failed";
@@ -1853,16 +1824,21 @@ async function loadInsights() {
     const demandFactors = data.demand_factors;
     const utilities = data.utilities_services;
     const housing = data.housing;
+    const accessGaps = data.access_gaps;
     const gradeHistory = data.grade_history;
 
     const domainHtml = card.domains.map((d) => {
-      const delta = d.grade_delta ? ` <span class="muted small">${escapeHtml(d.grade_delta)}</span>` : "";
+      const delta = d.grade_delta ? `<span class="grade-delta muted small">${escapeHtml(d.grade_delta)}</span>` : "";
       const ask = d.ask_prompt
         ? `<button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(d.ask_prompt)}">Ask</button>`
         : "";
       return `<div class="insight-domain ${gradeClass(d.grade)}">
         <div class="insight-domain-head">
-          <div class="insight-domain-meta"><strong>${escapeHtml(d.label)}</strong> <span class="insight-domain-grade">${escapeHtml(d.grade)}</span>${delta}</div>
+          <div class="insight-domain-title">
+            <strong>${escapeHtml(d.label)}</strong>
+            ${delta}
+          </div>
+          ${renderGradeBadge(d.grade)}
         </div>
         <p class="insight-domain-detail muted small">${escapeHtml(d.detail || "")}</p>
         ${ask ? `<div class="insight-domain-actions">${ask}</div>` : ""}
@@ -1884,9 +1860,23 @@ async function loadInsights() {
       </li>`
     ).join("");
 
+    const housingCard = `<article class="card">
+        <h2>Housing &amp; labor</h2>
+        <ul class="finding-list">${findingHtml(housing.findings) || "<li class='muted'>Balanced</li>"}</ul>
+      </article>`;
+
+    const transitAdvisorCard = `<article class="card">
+        <h2>Transit advisor</h2>
+        <p class="muted">${escapeHtml(transit.summary || "")}</p>
+        ${transitGroupsHtml}
+      </article>`;
+
     root.innerHTML = `
       <article class="card">
-        <h2>Report card — ${escapeHtml(card.overall_grade)} (${card.overall_score}/100)</h2>
+        <h2 class="insights-overall-head">
+          <span class="insights-overall-label">Report card</span>
+          <span class="insights-overall-grade">${renderGradeBadge(card.overall_grade)} <span class="muted small">(${card.overall_score}/100)</span></span>
+        </h2>
         <div class="insights-domains">${domainHtml}</div>
         <div class="grade-history-wrap">
           <p class="muted small">Overall score trend</p>
@@ -1894,16 +1884,10 @@ async function loadInsights() {
         </div>
       </article>
       ${renderDemandFactorsCard(demandFactors)}
+      ${housingCard}
       ${renderUtilitiesCard(utilities)}
-      <article class="card">
-        <h2>Transit doctor</h2>
-        <p class="muted">${escapeHtml(transit.summary || "")}</p>
-        ${transitGroupsHtml}
-      </article>
-      <article class="card">
-        <h2>Housing &amp; labor</h2>
-        <ul class="finding-list">${findingHtml(housing.findings) || "<li class='muted'>Balanced</li>"}</ul>
-      </article>`;
+      ${transitAdvisorCard}
+      ${renderAccessGapsCard(accessGaps)}`;
 
     root.querySelectorAll(".insight-ask").forEach((btn) => {
       btn.addEventListener("click", () => askFromPrompt(btn.dataset.prompt));

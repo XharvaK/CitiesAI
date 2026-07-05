@@ -97,7 +97,7 @@ def render_report_html(
     <ul>{issue_items or '<li class="muted">No major issues detected.</li>'}</ul>
   </div>
   <div class="card">
-    <h2>Transit doctor</h2>
+    <h2>Transit advisor</h2>
     <p class="muted">{html.escape(transit.get('summary', ''))}</p>
     <ul>{transit_items or '<li class="muted">No line detail available.</li>'}</ul>
   </div>

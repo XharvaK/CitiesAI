@@ -17,7 +17,13 @@ from .report_html import write_report_file
 from .setup_wizard import run_setup
 from .snapshot import load_snapshot_safe, snapshot_meta
 from .summary import build_city_brief
+from .version import __version__
 from .watch import WatchService
+
+
+def _resolved_export_path(args: argparse.Namespace) -> Path:
+    cfg = load_config()
+    return (args.export or cfg.resolved_export_path()).expanduser()
 
 
 def _configure_stdio() -> None:
@@ -194,8 +200,7 @@ def _cmd_diff(args: argparse.Namespace) -> int:
 def _cmd_transit(args: argparse.Namespace) -> int:
     from .analyzers.transit import analyze_transit_lines
 
-    cfg = load_config()
-    path = cfg.resolved_export_path()
+    path = _resolved_export_path(args)
     if not path.is_file():
         print(f"Export not found: {path}", file=sys.stderr)
         return 2
@@ -251,8 +256,7 @@ def _cmd_transit(args: argparse.Namespace) -> int:
 def _cmd_report(args: argparse.Namespace) -> int:
     from .report_ops import build_and_persist_report_card
 
-    cfg = load_config()
-    path = cfg.resolved_export_path()
+    path = _resolved_export_path(args)
     if not path.is_file():
         print(f"Export not found: {path}", file=sys.stderr)
         return 2
@@ -291,11 +295,10 @@ def _cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_brief(_args: argparse.Namespace) -> int:
+def _cmd_brief(args: argparse.Namespace) -> int:
     from .briefing import build_mayors_briefing
 
-    cfg = load_config()
-    path = cfg.resolved_export_path()
+    path = _resolved_export_path(args)
     if not path.is_file():
         print(f"Export not found: {path}", file=sys.stderr)
         return 2
@@ -325,6 +328,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Path to CS2DataExport latest.json (overrides config)",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
 
     sub = parser.add_subparsers(dest="command", required=True)

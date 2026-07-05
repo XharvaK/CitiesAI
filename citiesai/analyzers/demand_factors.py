@@ -36,6 +36,55 @@ def _zone_label(zone: str) -> str:
     )
 
 
+_FACTOR_LABELS: dict[str, str] = {
+    "taxes": "Taxes",
+    "happiness": "Happiness",
+    "health": "Health",
+    "education": "Education",
+    "entertainment": "Entertainment",
+    "crime": "Crime",
+    "traffic": "Traffic",
+    "pollution": "Pollution",
+    "noise": "Noise",
+    "ground_pollution": "Ground pollution",
+    "air_pollution": "Air pollution",
+    "unemployment": "Unemployment",
+    "services": "Services",
+    "transport": "Transport",
+    "parks": "Parks",
+    "land_value": "Land value",
+}
+
+
+def _humanize_factor_name(key: str) -> str:
+    normalized = key.strip().lower().replace(" ", "_")
+    if normalized in _FACTOR_LABELS:
+        return _FACTOR_LABELS[normalized]
+    if normalized.startswith("factor_"):
+        suffix = normalized.split("_", 1)[-1]
+        if suffix.isdigit():
+            return f"Demand factor {suffix}"
+    return key.replace("_", " ").title()
+
+
+def _top_negative_factors(factors: dict[str, int], *, limit: int = 3) -> list[dict[str, Any]]:
+    ranked = sorted(factors.items(), key=lambda item: item[1])
+    drivers: list[dict[str, Any]] = []
+    for name, value in ranked:
+        if value >= 0:
+            break
+        drivers.append(
+            {
+                "name": name,
+                "label": _humanize_factor_name(name),
+                "value": value,
+            }
+        )
+        if len(drivers) >= limit:
+            break
+    return drivers
+
+
 def _zone_report(
     zone: str,
     demand: float | None,
@@ -48,7 +97,7 @@ def _zone_report(
     )
     severity = "warn" if weak else "info"
     detail = f"{_zone_label(zone)} demand {demand * 100:.0f}% of bar range"
-    return {
+    report: dict[str, Any] = {
         "zone": zone,
         "label": _zone_label(zone),
         "demand": round(demand, 3),
@@ -56,7 +105,9 @@ def _zone_report(
         "weak": weak,
         "severity": severity,
         "detail": detail,
+        "drivers": _top_negative_factors(factors),
     }
+    return report
 
 
 def analyze_demand_factors(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -92,7 +143,7 @@ def analyze_demand_factors(snapshot: dict[str, Any]) -> dict[str, Any]:
     weak_zones = [zone for zone in zones if zone.get("weak")]
     if weak_zones:
         lead = weak_zones[0]
-        summary = f"{lead['label']} demand is weak. {lead['detail']}"
+        summary = f"{lead['label']} demand is weak ({lead['demand_percent']:.0f}% of bar range)"
     elif zones:
         summary = "RCI demand bars are available; no zone is critically weak."
     else:

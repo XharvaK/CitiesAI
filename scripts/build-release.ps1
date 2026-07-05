@@ -78,6 +78,28 @@ if ($Iscc) {
     $Version = (uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
     & $Iscc "/DMyAppVersion=$Version" (Join-Path $RepoRoot 'packaging\CitiesAI.iss')
     Write-Host 'Installer built under dist\' -ForegroundColor Green
+
+    $SetupPattern = Join-Path $RepoRoot "dist\CitiesAI-Setup-$Version.exe"
+    $SetupFiles = Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'dist') -Filter "CitiesAI-Setup-$Version.exe" -ErrorAction SilentlyContinue
+    if (-not $SetupFiles) {
+        $SetupFiles = Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'dist') -Filter 'CitiesAI-Setup-*.exe' -ErrorAction SilentlyContinue
+    }
+    if ($SetupFiles) {
+        $ChecksumLines = @()
+        foreach ($file in ($SetupFiles | Sort-Object Name -Descending)) {
+            if ($file.Name -ne "CitiesAI-Setup-$Version.exe") { continue }
+            $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $ChecksumLines += "$hash  $($file.Name)"
+        }
+        if ($ChecksumLines.Count -gt 0) {
+            $ChecksumPath = Join-Path $RepoRoot 'dist\checksums.txt'
+            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText($ChecksumPath, ($ChecksumLines -join [Environment]::NewLine) + [Environment]::NewLine, $utf8NoBom)
+            Write-Host "Wrote $($ChecksumLines.Count) checksum(s) to dist\checksums.txt" -ForegroundColor Green
+        }
+    } else {
+        Write-Host "No CitiesAI-Setup-*.exe found for checksums.txt" -ForegroundColor Yellow
+    }
 } else {
     Write-Host 'Inno Setup not found. Ship dist\CitiesAI.exe or install Inno Setup 6.' -ForegroundColor Yellow
 }

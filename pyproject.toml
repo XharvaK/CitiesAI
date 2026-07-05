@@ -1,6 +1,6 @@
 [project]
 name = "citiesai"
-version = "0.6.2"
+version = "0.7.0"
 description = "Read-only Cities: Skylines II gameplay advisor - city snapshot + wiki knowledge"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,8 @@ classifiers = [
 ]
 dependencies = [
     "cities2-mcp>=0.1.9,<0.2.0",
+    "pillow>=10.0",
+    "pystray>=0.19",
     "pywebview>=5.0",
 ]
 
@@ -53,7 +55,6 @@ include = [
 
 [dependency-groups]
 dev = [
-    "pillow>=10.0",
     "pyinstaller>=6.0",
     "pytest>=8.0",
     "ruff>=0.6",

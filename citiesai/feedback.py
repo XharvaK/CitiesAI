@@ -50,7 +50,9 @@ def _bundled_webhook_candidates() -> list[Path]:
 def _discord_webhook_url() -> str | None:
     url = os.environ.get("CITIESAI_DISCORD_WEBHOOK", "").strip()
     if url:
-        return url
+        if url.startswith("https://discord.com/api/webhooks/"):
+            return url
+        return None
     for candidate in _bundled_webhook_candidates():
         url = _read_webhook_file(candidate)
         if url:

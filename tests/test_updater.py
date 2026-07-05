@@ -25,6 +25,18 @@ def test_compare_versions() -> None:
     assert compare_versions("0.7.0", "0.6.9") > 0
 
 
+def test_compare_versions_double_digit_minor() -> None:
+    assert compare_versions("0.6.2", "0.10.0") < 0
+    assert compare_versions("0.6.10", "0.6.9") > 0
+
+
+def test_validate_download_url_rejects_unknown_host() -> None:
+    from citiesai.updater import _validate_download_url
+
+    with pytest.raises(ValueError, match="not allowed"):
+        _validate_download_url("https://evil.example/setup.exe")
+
+
 def test_normalize_release_tag() -> None:
     assert normalize_release_tag("v0.6.1") == "0.6.1"
 

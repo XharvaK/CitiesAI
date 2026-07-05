@@ -29,6 +29,11 @@ datas += _wv_datas
 binaries += _wv_binaries
 hiddenimports += _wv_hidden
 
+_ps_datas, _ps_binaries, _ps_hidden = collect_all("pystray")
+datas += _ps_datas
+binaries += _ps_binaries
+hiddenimports += _ps_hidden
+
 bundled_dir = repo / "packaging" / "bundled"
 bundled_mod = bundled_dir / "CS2DataExport"
 if bundled_mod.is_dir():

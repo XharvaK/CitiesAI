@@ -199,6 +199,17 @@ def evaluate_watch_alerts(snapshot: dict[str, Any], *, state: dict[str, Any] | N
         if _should_alert(state, alert_id):
             alerts.append({"id": alert_id, "title": "CitiesAI forecast", "message": message})
 
+    for anomaly in get_historian().detect_anomalies(export_path=export_path):
+        alert_id = f"{city}:anomaly:{anomaly.get('id')}"
+        if _should_alert(state, alert_id):
+            alerts.append(
+                {
+                    "id": alert_id,
+                    "title": str(anomaly.get("title", "Anomaly")),
+                    "message": str(anomaly.get("detail", ""))[:200],
+                }
+            )
+
     treasury = metrics.get("treasury")
     hourly = metrics.get("treasury_net_per_hour")
     if isinstance(treasury, (int, float)) and isinstance(hourly, (int, float)) and hourly < 0:

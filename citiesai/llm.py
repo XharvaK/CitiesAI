@@ -56,6 +56,9 @@ TOOL_STATUS_MESSAGES: dict[str, str] = {
     "search_encyclopedia": "Searching in-game encyclopedia…",
     "get_city_history": "Loading city history…",
     "get_transit_lines": "Analyzing transit lines…",
+    "get_access_gaps": "Checking transit access gaps…",
+    "get_demand_factors": "Reading RCI demand drivers…",
+    "get_utilities_services": "Checking utilities and services…",
 }
 
 AGENTIC_LOOP_ERROR = (
@@ -167,6 +170,34 @@ def _parse_message(data: dict[str, Any]) -> dict[str, Any]:
     return choices[0].get("message") or {}
 
 
+def _stream_chat_tokens(
+    messages: list[dict[str, Any]],
+    settings: LLMSettings,
+    *,
+    tools: list[dict[str, Any]] | None = None,
+) -> Iterator[str]:
+    payload = _chat_payload(messages, settings, stream=True, tools=tools)
+    with _post_chat(payload, settings, stream=True) as response:
+        for raw_line in response:
+            line = raw_line.decode("utf-8", errors="replace").strip()
+            if not line or not line.startswith("data:"):
+                continue
+            data_part = line[5:].strip()
+            if data_part == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data_part)
+            except json.JSONDecodeError:
+                continue
+            choices = chunk.get("choices") or []
+            if not choices:
+                continue
+            delta = choices[0].get("delta") or {}
+            content = delta.get("content")
+            if content:
+                yield str(content)
+
+
 def _complete_chat(
     messages: list[dict[str, Any]],
     settings: LLMSettings,
@@ -236,9 +267,12 @@ def iter_agentic_answer(
             content = message.get("content")
             if not content:
                 raise RuntimeError("LLM returned empty content.")
+            answer = str(content).strip()
+            for token in stream_text_chunks(answer):
+                yield ("token", token)
             yield (
                 "result",
-                AgenticResult(answer=str(content).strip(), sources=sources, tool_calls=tool_names),
+                AgenticResult(answer=answer, sources=sources, tool_calls=tool_names),
             )
             return
 
@@ -330,17 +364,24 @@ def generate_agentic_answer(
     return result
 
 
-def generate_answer(prompt: str, *, cfg: CitiesAIConfig) -> str:
+def generate_answer(
+    prompt: str,
+    *,
+    cfg: CitiesAIConfig,
+    history_messages: list[dict[str, str]] | None = None,
+) -> str:
     settings = resolve_llm_settings(cfg)
     if settings is None:
         raise RuntimeError(
             "No LLM API key found. Add your Mistral key in Settings or set MISTRAL_API_KEY."
         )
 
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "system", "content": build_system_prompt()},
         {"role": "user", "content": prompt},
     ]
+    if history_messages:
+        messages = [messages[0], *history_messages[-8:], messages[1]]
     message = _complete_chat(messages, settings)
     content = message.get("content")
     if not content:
@@ -348,37 +389,25 @@ def generate_answer(prompt: str, *, cfg: CitiesAIConfig) -> str:
     return str(content).strip()
 
 
-def stream_answer(prompt: str, *, cfg: CitiesAIConfig) -> Iterator[str]:
+def stream_answer(
+    prompt: str,
+    *,
+    cfg: CitiesAIConfig,
+    history_messages: list[dict[str, str]] | None = None,
+) -> Iterator[str]:
     settings = resolve_llm_settings(cfg)
     if settings is None:
         raise RuntimeError(
             "No LLM API key found. Add your Mistral key in Settings or set MISTRAL_API_KEY."
         )
 
-    messages = [
+    messages: list[dict[str, Any]] = [
         {"role": "system", "content": build_system_prompt()},
         {"role": "user", "content": prompt},
     ]
-    payload = _chat_payload(messages, settings, stream=True)
-    with _post_chat(payload, settings, stream=True) as response:
-        for raw_line in response:
-            line = raw_line.decode("utf-8", errors="replace").strip()
-            if not line or not line.startswith("data:"):
-                continue
-            data_part = line[5:].strip()
-            if data_part == "[DONE]":
-                break
-            try:
-                chunk = json.loads(data_part)
-            except json.JSONDecodeError:
-                continue
-            choices = chunk.get("choices") or []
-            if not choices:
-                continue
-            delta = choices[0].get("delta") or {}
-            content = delta.get("content")
-            if content:
-                yield str(content)
+    if history_messages:
+        messages = [messages[0], *history_messages[-8:], messages[1]]
+    yield from _stream_chat_tokens(messages, settings)
 
 
 def stream_text_chunks(text: str, *, chunk_size: int = 12) -> Iterator[str]:

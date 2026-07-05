@@ -143,8 +143,9 @@ class CityHistorian:
 
     def _connect(self) -> sqlite3.Connection:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        conn = sqlite3.connect(self._db_path, check_same_thread=False, timeout=10.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
     def _ensure_schema(self) -> None:
@@ -231,7 +232,36 @@ class CityHistorian:
             (path_key, mtime, now),
         )
         ingested_mtimes[path_key] = mtime
+        self._prune_snapshots(conn, city_id)
         return True
+
+    def _prune_snapshots(self, conn: sqlite3.Connection, city_id: int) -> None:
+        conn.execute(
+            """
+            DELETE FROM snapshots
+            WHERE city_id = ?
+              AND id NOT IN (
+                SELECT id FROM snapshots
+                WHERE city_id = ?
+                ORDER BY exported_at_utc DESC
+                LIMIT ?
+              )
+            """,
+            (city_id, city_id, HISTORY_MAX_POINTS),
+        )
+        conn.execute(
+            """
+            DELETE FROM report_scores
+            WHERE city_id = ?
+              AND id NOT IN (
+                SELECT id FROM report_scores
+                WHERE city_id = ?
+                ORDER BY exported_at_utc DESC
+                LIMIT ?
+              )
+            """,
+            (city_id, city_id, HISTORY_MAX_POINTS),
+        )
 
     def sync(self, export_path: Path | None = None, *, force: bool = False) -> dict[str, Any]:
         with self._lock:
@@ -367,8 +397,15 @@ class CityHistorian:
                     """
                     INSERT INTO tracked_issues(
                         city_id, issue_id, severity, title, detail,
-                        first_seen, last_seen, session_count
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                        first_seen, last_seen, session_count, resolved_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL)
+                    ON CONFLICT(city_id, issue_id) DO UPDATE SET
+                        severity = excluded.severity,
+                        title = excluded.title,
+                        detail = excluded.detail,
+                        last_seen = excluded.last_seen,
+                        resolved_at = NULL,
+                        session_count = tracked_issues.session_count + 1
                     """,
                     (
                         city_id,

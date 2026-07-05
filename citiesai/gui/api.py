@@ -7,20 +7,22 @@ from pathlib import Path
 from typing import Any
 
 from ..analyzers import (
+    analyze_access_gaps,
     analyze_budget,
     analyze_demand_factors,
     analyze_housing_labor,
     analyze_transit_lines,
     analyze_utilities_services,
+    build_report_card,
 )
 from ..ask_core import (
-    build_ask_bundle,
-    collect_sources_for_queries,
+    build_ask_bundle_and_sources,
     meta_to_dict,
     prepare_agentic_ask,
     run_ask,
 )
-from ..briefing import build_mayors_briefing
+from ..briefing import build_city_briefing_card, build_mayors_briefing
+from ..cache import load_config_cached, load_export_cached
 from ..city_issues import detect_city_issues
 from ..city_name import resolve_city_display_name
 from ..config import config_dir, config_path, load_config, merge_discovered, set_onboarding_complete
@@ -30,10 +32,10 @@ from ..dashboard import extract_headline_metrics
 from ..discovery import discover_paths
 from ..env_store import api_key_suffix, clear_env_var, read_env_var, save_env_var
 from ..feedback import submit_feedback
+from ..fix_first import build_fix_first_playbook
 from ..forecasts import build_forecasts
 from ..historian import get_historian
 from ..issues import blocking_issue_count, collect_issues
-from ..keywords import build_search_queries
 from ..llm import (
     LLM_PRESETS,
     iter_agentic_answer,
@@ -60,6 +62,67 @@ from ..updater import (
 )
 from ..version import __version__
 from ..watch import get_watch_service
+
+
+def _load_live_export() -> tuple[dict[str, Any], Any, Path]:
+    cfg = load_config_cached()
+    export_path = cfg.resolved_export_path()
+    snapshot, err = load_export_cached(export_path)
+    if snapshot is None:
+        raise RuntimeError(err or f"Export not found: {export_path}")
+    meta = snapshot_meta(snapshot, path=export_path)
+    return snapshot, meta, export_path
+
+
+def api_hud() -> dict[str, Any]:
+    try:
+        snapshot, meta, _export_path = _load_live_export()
+    except RuntimeError as exc:
+        return {"ok": False, "error": str(exc)}
+    historian = get_historian()
+    history = historian.get_history(export_path=meta.path)
+    metrics = extract_headline_metrics(snapshot, meta)
+    report_card = build_report_card(
+        snapshot,
+        meta,
+        previous_domain_scores=historian.previous_session_report_scores(
+            str(history.get("city_name") or ""),
+            history=history,
+        ),
+    )
+    issues = detect_city_issues(snapshot)
+    issues = historian.enrich_issues_with_lifecycle(issues, city_name=history.get("city_name"))
+    briefing = build_mayors_briefing(snapshot, meta, historian=historian, history=history, issues=issues)
+    forecasts = briefing.get("forecasts") or {}
+    fix_first = build_fix_first_playbook(
+        issues=issues,
+        briefing=None,
+        report_card=report_card,
+        forecasts=forecasts,
+    )
+    top_priority = fix_first[0] if fix_first else None
+    age_seconds = meta.age_seconds if meta.age_seconds is not None else 0
+    stale = age_seconds > 3600
+    return {
+        "ok": True,
+        "meta": {
+            **meta_to_dict(meta),
+            "age_seconds": age_seconds,
+            "stale": stale,
+        },
+        "metrics": {
+            "city_name": metrics.get("city_name"),
+            "population": metrics.get("population"),
+            "population_change_per_hour": metrics.get("population_change_per_hour"),
+            "treasury": metrics.get("treasury"),
+            "treasury_net_per_hour": metrics.get("treasury_net_per_hour"),
+        },
+        "report_card": {
+            "overall_grade": report_card.get("overall_grade"),
+            "overall_score": report_card.get("overall_score"),
+        },
+        "top_priority": top_priority,
+    }
 
 
 def api_version() -> dict[str, Any]:
@@ -116,12 +179,49 @@ def api_status() -> dict[str, Any]:
     return _status_with_issues()
 
 
-def _sync_city_state(snapshot: dict[str, Any], meta: Any, issues: list[dict[str, Any]]) -> str:
+def _sync_city_state(
+    snapshot: dict[str, Any],
+    meta: Any,
+    issues: list[dict[str, Any]],
+    *,
+    historian: Any | None = None,
+    skip_sync: bool = False,
+) -> str:
     city_name = resolve_city_display_name(snapshot, meta)
-    historian = get_historian()
-    historian.sync(meta.path)
-    historian.sync_tracked_issues(city_name, issues)
+    hist = historian or get_historian()
+    if not skip_sync:
+        hist.sync(meta.path)
+    hist.sync_tracked_issues(city_name, issues)
     return city_name
+
+
+def _append_anomaly_issues(
+    issues: list[dict[str, Any]],
+    *,
+    city_name: str,
+    export_path: Path,
+    historian: Any | None = None,
+) -> list[dict[str, Any]]:
+    hist = historian or get_historian()
+    existing = {str(issue.get("id")) for issue in issues}
+    merged = list(issues)
+    for row in hist.detect_anomalies(city_name, export_path=export_path):
+        issue_id = str(row.get("id") or "")
+        if not issue_id or issue_id in existing:
+            continue
+        merged.append(
+            {
+                "id": issue_id,
+                "kind": "city",
+                "severity": row.get("severity", "info"),
+                "title": row.get("title", "Anomaly"),
+                "detail": row.get("detail", ""),
+                "ask_prompt": row.get("ask_prompt", ""),
+                "report_category": "anomaly",
+            }
+        )
+        existing.add(issue_id)
+    return merged
 
 
 def api_issues() -> dict[str, Any]:
@@ -136,7 +236,14 @@ def api_issues() -> dict[str, Any]:
         if snapshot is not None:
             meta = snapshot_meta(snapshot, path=export_path)
             city_name = _sync_city_state(snapshot, meta, issues)
-            issues = get_historian().enrich_issues_with_lifecycle(issues, city_name=city_name)
+            historian = get_historian()
+            issues = _append_anomaly_issues(
+                issues,
+                city_name=city_name,
+                export_path=export_path,
+                historian=historian,
+            )
+            issues = historian.enrich_issues_with_lifecycle(issues, city_name=city_name)
             resolved_history = get_historian().get_resolved_history(city_name)
     return {
         "ok": True,
@@ -181,7 +288,19 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
     historian.sync(export_path)
     hist = historian.get_history(export_path=export_path, limit=limit)
     issues = detect_city_issues(snapshot)
-    city_name = _sync_city_state(snapshot, meta, issues)
+    city_name = _sync_city_state(
+        snapshot,
+        meta,
+        issues,
+        historian=historian,
+        skip_sync=True,
+    )
+    issues = _append_anomaly_issues(
+        issues,
+        city_name=city_name,
+        export_path=export_path,
+        historian=historian,
+    )
     issues = historian.enrich_issues_with_lifecycle(issues, city_name=city_name)
     report_card = build_and_persist_report_card(snapshot, meta, historian=historian)
     forecasts = build_forecasts(hist)
@@ -193,6 +312,19 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         history=hist,
         issues=issues,
     )
+    fix_first = build_fix_first_playbook(
+        issues=issues,
+        briefing=None,
+        report_card=report_card,
+        forecasts=forecasts,
+    )
+    city_briefing_card = build_city_briefing_card(
+        digest=digest,
+        resolved=briefing.get("resolved") or [],
+        grade_deltas=briefing.get("grade_deltas") or [],
+        forecasts=forecasts,
+        priorities=fix_first,
+    )
     return {
         "ok": True,
         "meta": meta_to_dict(meta),
@@ -203,6 +335,8 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         "forecasts": forecasts,
         "session_digest": digest,
         "briefing": briefing,
+        "city_briefing_card": city_briefing_card,
+        "fix_first": fix_first,
         "grade_history": historian.get_grade_history(city_name, limit=limit),
         "issues": issues,
     }
@@ -248,9 +382,7 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
     try:
         meta = snapshot_meta(snapshot, path=export_path)
         brief = build_city_brief(snapshot, meta)
-        queries = build_search_queries(snapshot, question)
-        sources = collect_sources_for_queries(queries, limit=limit)
-        bundle = build_ask_bundle(snapshot, meta, question, limit=limit)
+        bundle, sources = build_ask_bundle_and_sources(snapshot, meta, question, limit=limit)
     except Exception as exc:  # noqa: BLE001 - surface to SSE client
         yield _sse_event("error", {"error": str(exc)})
         return
@@ -280,6 +412,8 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
                 export_path=export_path,
             )
             result = None
+            answer = ""
+            streamed_tokens = False
             for kind, payload in iter_agentic_answer(
                 question,
                 city_brief=brief,
@@ -292,15 +426,26 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
             ):
                 if kind == "status":
                     yield _sse_event("status", {"text": str(payload)})
+                elif kind == "token":
+                    streamed_tokens = True
+                    answer += str(payload)
+                    yield _sse_event("token", {"text": str(payload)})
                 elif kind == "result":
                     result = payload
             if result is None:
                 raise RuntimeError("Agentic loop produced no answer.")
-            answer = result.answer
+            if not answer:
+                answer = result.answer
+            if not streamed_tokens:
+                for chunk in stream_text_chunks(answer):
+                    yield _sse_event("token", {"text": chunk})
+            tool_sources = [
+                {"source": "tool", "title": name, "snippet": ""} for name in result.tool_calls
+            ]
+            all_sources = sources + tool_sources
+            yield _sse_event("sources", {"sources": all_sources})
             conv.add_turn("user", question)
-            conv.add_turn("assistant", answer, sources=sources)
-            for chunk in stream_text_chunks(answer):
-                yield _sse_event("token", {"text": chunk})
+            conv.add_turn("assistant", answer, sources=all_sources)
             yield _sse_event(
                 "done",
                 {
@@ -311,8 +456,15 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
                 },
             )
         else:
-            for chunk in stream_answer(bundle, cfg=cfg):
+            conv = get_conversation()
+            city_name = resolve_city_display_name(snapshot, meta)
+            conv.set_city_context(city_name, brief)
+            answer = ""
+            for chunk in stream_answer(bundle, cfg=cfg, history_messages=conv.messages_for_llm()):
+                answer += chunk
                 yield _sse_event("token", {"text": chunk})
+            conv.add_turn("user", question)
+            conv.add_turn("assistant", answer, sources=sources)
             yield _sse_event("done", {"mode": "llm", "agentic": False})
     except RuntimeError as exc:
         yield _sse_event("error", {"error": str(exc), "mode": "bundle", "bundle": bundle})
@@ -452,12 +604,12 @@ def api_insights() -> dict[str, Any]:
     meta = snapshot_meta(snapshot, path=export_path)
     historian = get_historian()
     historian.sync(export_path)
-    hist = historian.get_history(export_path=export_path, limit=HISTORY_MAX_POINTS)
     city_name = resolve_city_display_name(snapshot, meta)
     return {
         "ok": True,
         "report_card": build_and_persist_report_card(snapshot, meta, historian=historian),
         "transit": analyze_transit_lines(snapshot),
+        "access_gaps": analyze_access_gaps(snapshot),
         "demand_factors": analyze_demand_factors(snapshot),
         "utilities_services": analyze_utilities_services(snapshot),
         "housing": analyze_housing_labor(snapshot),

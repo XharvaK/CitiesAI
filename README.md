@@ -7,7 +7,7 @@
 | Feature | Needs AI key? |
 |---------|----------------|
 | **Dashboard** — live metrics, session digest, report-card strip | No |
-| **Insights** — letter grades, RCI demand, utilities, transit doctor | No |
+| **Insights** — letter grades, RCI demand, housing & labor, utilities, transit advisor | No |
 | **Issues** — setup checks + city pressures; click a row for **Ask** or **Settings** | No |
 | **Push notifications** — Windows toasts for new/changed issues (Issues tab toggle) | No |
 | **Auto-updater** — check GitHub Releases from Settings | No |
@@ -28,7 +28,7 @@ The **Issues** tab lists setup problems and **current city pressures** (water, h
 
 | Requirement | Notes |
 |-------------|--------|
-| **Windows 10/11** | 
+| **Windows 10/11** | Desktop app (WebView2; usually preinstalled on Win 11) — current release **0.7.0** |
 | **Cities: Skylines II** | Steam or Xbox PC (Game Pass) |
 | **CS2 Data Export mod** | Bundled in the Windows installer |
 | **Mistral API key** | Optional; free Experiment tier is enough for testing |
@@ -37,9 +37,9 @@ The **Issues** tab lists setup problems and **current city pressures** (water, h
 
 ## Install (Windows — recommended)
 
-See [CHANGELOG.md](CHANGELOG.md) for 0.6.2 release notes.
+See [CHANGELOG.md](CHANGELOG.md) for 0.7.0 release notes.
 
-1. Download **`CitiesAI-Setup-0.6.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+1. Download **`CitiesAI-Setup-0.7.0.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
 2. Run the installer (per-user, no admin). SmartScreen may warn on unsigned builds — use **More info → Run anyway** if you trust the source.
 3. Launch **CitiesAI** from the Start menu.
 4. Follow the onboarding wizard:
@@ -80,7 +80,7 @@ Mod from source: [docs/INSTALL-MOD.md](docs/INSTALL-MOD.md)
 1. Launch **CitiesAI** (or leave it open).
 2. Play CS2 with **CS2 Data Export** enabled and your city loaded.
 3. Check the **Dashboard** for live metrics, the Fresh/Stale pill, and the session digest banner.
-4. Open **Insights** for report-card grades, RCI demand, utilities, and transit analysis.
+4. Open **Insights** for report-card grades, RCI demand, housing & labor, utilities, and transit analysis.
 5. Open **Issues** when something looks wrong — click a row to jump into **Ask** or **Settings**.
 6. Open **Ask** and type a question (e.g. *"Why is my budget negative?"*).
 7. Use **Feedback** to report bugs or bad answers.
@@ -166,7 +166,7 @@ Free-tier rate limits apply on Mistral’s side. If Ask fails, check **Settings 
 
 | Command | Purpose |
 |---------|---------|
-| `citiesai gui` | Desktop app: **Dashboard**, **Insights**, **Issues**, **Ask**, **Settings**, **Feedback** |
+| `citiesai gui` | Desktop app: **Dashboard**, **Insights**, **Issues**, **Ask**, **Settings**, **Feedback**. Close (X) minimizes to the system tray; right-click the tray icon to reopen or exit. |
 | `citiesai gui --watch` | GUI + Windows push notifications for city pressures (same as Issues tab toggle) |
 | `citiesai setup` | Detect game paths and write config |
 | `citiesai doctor` | Verify snapshot, wiki, encyclopedia, API key |
@@ -175,7 +175,7 @@ Free-tier rate limits apply on Mistral’s side. If Ask fails, check **Settings 
 | `citiesai ask "..."` | Brief + retrieval + LLM answer (if key set) |
 | `citiesai ask "..." --no-llm` | Context bundle only (for Cursor/agents) |
 | `citiesai history` | Historian metric series for the current city |
-| `citiesai diff --before … --after …` | Compare two snapshot files |
+| `citiesai diff <before> <after>` | Compare two snapshot files |
 | `citiesai transit` | Transit line doctor report |
 | `citiesai brief` | Mayor's briefing — session digest, priorities, resolved issues |
 | `citiesai report` | Letter-grade report card (CLI) |

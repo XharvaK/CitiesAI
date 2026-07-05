@@ -9,7 +9,6 @@ from citiesai.city_issues import detect_city_issues
 from citiesai.historian import CityHistorian
 from citiesai.snapshot import load_snapshot, snapshot_meta
 
-
 VENDOR_SAMPLE = (
     Path(__file__).resolve().parents[1]
     / "vendor/Cities2-DataExport/sample/latest.sample.json"
@@ -43,6 +42,26 @@ def test_issue_lifecycle_tracks_and_resolves(tmp_path: Path, vendor_sample: dict
     resolved = historian.get_resolved_history(city_name)
     assert len(resolved) == 1
     assert resolved[0]["title"] == "Budget deficit"
+
+
+def test_issue_reopen_after_resolve(tmp_path: Path, vendor_sample: dict) -> None:
+    db = tmp_path / "historian.db"
+    historian = CityHistorian(db_path=db)
+    city_name = "Test City"
+
+    issue = {
+        "id": "city_budget_deficit",
+        "kind": "city",
+        "severity": "warn",
+        "title": "Budget deficit",
+        "detail": "Expenses exceed income",
+    }
+    historian.sync_tracked_issues(city_name, [issue])
+    historian.sync_tracked_issues(city_name, [])
+    historian.sync_tracked_issues(city_name, [issue])
+    enriched = historian.enrich_issues_with_lifecycle([issue], city_name=city_name)
+    assert enriched[0]["session_count"] >= 1
+    assert historian.get_resolved_history(city_name) == []
 
 
 def test_mayors_briefing_has_text(tmp_path: Path, vendor_sample: dict) -> None:

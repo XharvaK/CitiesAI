@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 _ENV_LINE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
@@ -81,7 +82,15 @@ def save_env_var(name: str, value: str) -> Path:
                 lines.append(line)
     if not found:
         lines.append(f'{name}="{_escape(value)}"')
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    content = "\n".join(lines) + "\n"
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".env-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(tmp_path, path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
     if sys.platform != "win32":
         path.chmod(0o600)
     os.environ[name] = value
@@ -95,7 +104,15 @@ def clear_env_var(name: str) -> None:
         return
     kept = [line for line in path.read_text(encoding="utf-8").splitlines() if not line.strip().startswith(f"{name}=")]
     if kept:
-        path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        content = "\n".join(kept) + "\n"
+        fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".env-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(content)
+            os.replace(tmp_path, path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
     else:
         path.unlink(missing_ok=True)
     os.environ.pop(name, None)

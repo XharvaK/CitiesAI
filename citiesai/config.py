@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -129,12 +130,28 @@ class CitiesAIConfig:
         if self.update_dismissed_version:
             lines.append(f'dismissed_version = "{_escape_toml(self.update_dismissed_version)}"')
         lines.append("")
-        path.write_text("\n".join(lines), encoding="utf-8")
+        content = "\n".join(lines) + "\n"
+        path = config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".config-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(content)
+            os.replace(tmp_path, path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        try:
+            from .cache import invalidate_config_cache
+
+            invalidate_config_cache()
+        except ImportError:
+            pass
         return path
 
 
 def _escape_toml(value: str) -> str:
-    return value.replace("\\", "\\\\")
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def load_config() -> CitiesAIConfig:

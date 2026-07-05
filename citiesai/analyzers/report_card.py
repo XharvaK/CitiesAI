@@ -166,6 +166,19 @@ def build_report_card(
 
     transit_lines = transit.get("lines") or []
     line_count = int(transit.get("line_count") or len(transit_lines))
+    mobility = pick_group(snapshot, "Mobility")
+    mobility_lines_total = pick(mobility, "LinesTotal", "lines_total")
+    if isinstance(mobility_lines_total, (int, float)):
+        mobility_lines_total = int(mobility_lines_total)
+    else:
+        mobility_lines_total = None
+
+    transit_partial = (
+        mobility_lines_total is not None
+        and line_count > 0
+        and mobility_lines_total > line_count * 5
+    )
+
     if not transit.get("ok") or line_count == 0:
         domains.append(
             {
@@ -182,10 +195,33 @@ def build_report_card(
             }
         )
     else:
-        problem = transit.get("problem_count", 0)
-        transit_score = max(20.0, 100.0 - problem / line_count * 60)
-        total_waiting = transit.get("total_waiting", 0)
-        if total_waiting > 500:
+        if transit_partial and mobility_lines_total:
+            transit_perf = pick_group(snapshot, "TransitPerformanceSemantics")
+            line_pressure = pick_group(transit_perf, "LinePressure")
+            service_gaps = pick_group(transit_perf, "ServiceGaps")
+            critical = pick(line_pressure, "CriticalPressureLines", "critical_pressure_lines")
+            high = pick(line_pressure, "HighPressureLines", "high_pressure_lines")
+            no_service = pick(service_gaps, "NoServiceLines", "no_service_lines")
+            problem = sum(
+                int(v)
+                for v in (critical, high, no_service)
+                if isinstance(v, (int, float))
+            )
+            effective_lines = mobility_lines_total
+            total_waiting = transit.get("total_waiting", 0)
+            detail = (
+                f"Graded from network summary ({effective_lines} lines; "
+                f"detail export covers {line_count}). "
+                f"{problem} network pressure signals."
+            )
+        else:
+            problem = transit.get("problem_count", 0)
+            effective_lines = line_count
+            total_waiting = transit.get("total_waiting", 0)
+            detail = transit.get("summary", "")
+
+        transit_score = max(20.0, 100.0 - problem / max(effective_lines, 1) * 60)
+        if isinstance(total_waiting, (int, float)) and total_waiting > 500:
             transit_score -= 15
         transit_grade = _grade(transit_score)
         domains.append(
@@ -194,7 +230,7 @@ def build_report_card(
                 "label": "Transit",
                 "score": round(transit_score, 1),
                 "grade": transit_grade,
-                "detail": transit.get("summary", ""),
+                "detail": detail,
                 "ask_prompt": "How can I improve public transit in my city?",
             }
         )

@@ -33,6 +33,20 @@ def test_transit_doctor_finds_line(vendor_sample: dict) -> None:
     assert "problem_groups" in report
 
 
+def test_report_card_transit_sparse_detail_uses_mobility(vendor_sample: dict) -> None:
+    snapshot = json.loads(json.dumps(vendor_sample))
+    group = snapshot.setdefault("transit_line_detail_semantics", {})
+    group["status"] = "ok"
+    group["lines"] = group.get("lines") or [group["lines"][0]] if group.get("lines") else []
+    if not group["lines"] and vendor_sample.get("transit_line_detail_semantics", {}).get("lines"):
+        group["lines"] = [vendor_sample["transit_line_detail_semantics"]["lines"][0]]
+    meta = snapshot_meta(snapshot, path=VENDOR_SAMPLE)
+    card = build_report_card(snapshot, meta)
+    transit = next(d for d in card["domains"] if d["id"] == "transit")
+    assert transit["grade"] != "N/A"
+    assert transit["score"] is not None
+
+
 def test_report_card_transit_na_when_no_lines(vendor_sample: dict) -> None:
     snapshot = json.loads(json.dumps(vendor_sample))
     group = snapshot.setdefault("transit_line_detail_semantics", {})

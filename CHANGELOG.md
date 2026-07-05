@@ -2,6 +2,54 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.7.0] — 2026-07-06
+
+### Correctness — revive dead wiring
+
+- **Housing/labor analyzer** — reads schema 2.11 field names (`total_households`, `jobs_minus_current_workers`, education-level maps); new tests.
+- **City issues** — `CityServices` group fix; moving-away uses monthly flow; per-capita thresholds for homeless/unemployment.
+- **Historian** — issue re-open no longer crashes on `UNIQUE`; WAL mode; snapshot retention pruning.
+- **CLI** — `--export` honored by `transit`/`brief`/`report`; `--version` flag; doctor stale threshold aligned to 15s.
+- **Report card** — transit grade falls back to network summary when line detail export is sparse.
+
+### Security & performance
+
+- **Session token** — mutating GUI API routes require `X-CitiesAI-Token`; token injected into served HTML.
+- **Updater** — GitHub host allowlist; SHA256 verification; streamed atomic download to `.partial`.
+- **Config/env** — atomic writes for `config.toml` and `.env`; Discord webhook env var validated.
+- **Dashboard poll** — single historian sync per request; export/config mtime caching.
+
+### Features
+
+- **Fix This First** — dashboard card ranking top 1–3 session actions.
+- **Anomaly Watch** — historian spike detection merged into Issues feed.
+- **RCI demand drivers** — negative factor chips per zone in Insights.
+- **Ask upgrades** — deduped retrieval, non-agentic multi-turn history, post-run sources SSE, 480s client timeout, cancel/abort on clear.
+- **MCP** — `get_transit_lines` tool added.
+- **HUD** — lightweight `/api/hud` endpoint; compact overlay with treasury/pop ±/hr, overall grade, top priority, stale dot.
+
+### UI polish (0.7.0)
+
+- **Ask** — removed Cancel button; scrollbar edge-aligned with Insights; Send shows "Sending…" during stream.
+- **Feedback** — Send button right-aligned in footer row.
+- **RCI demand** — deduped summary/row copy; humanized driver labels (`factor_N` → Demand factor N).
+- **Grade badges** — A–F pill badges on dashboard strip and Insights report card.
+- **Dashboard** — unified City Briefing card (digest, priorities, resolved, forecasts, grade deltas); metrics section header; 12-card 3×4 grid.
+- **Compact HUD v2** — frameless always-on-top strip from Settings; treasury + population ±/hr, grade badge, top priority alert.
+- **System tray** — tray icon on launch; closing the window (X) minimizes to tray; right-click **Open**, **Compact HUD**, or **Exit** (full quit).
+- **Insights** — removed redundant Budget & treasury card (treasury/net already on Dashboard; economy grade on report card).
+
+### Mod (CS2 Data Export)
+
+- **Transit access gaps** — passenger trip carrier detection enabled; `EntityQuery` disposal fixes.
+- Target schema **2.12** groundwork for deferred coverage fields.
+
+### Install
+
+Download **`CitiesAI-Setup-0.7.0.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+
+---
+
 ## [0.6.2] — 2026-07-05
 
 ### UI polish

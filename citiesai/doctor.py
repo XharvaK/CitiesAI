@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from .config import CitiesAIConfig, config_path, load_config
+from .constants import STALE_AFTER_SECONDS
 from .dashboard import extract_headline_metrics
 from .issues import blocking_issue_count, collect_issues
 from .mod_install import mod_installed
-from .snapshot import load_snapshot_safe, snapshot_meta, SnapshotMeta
+from .snapshot import SnapshotMeta, load_snapshot_safe, snapshot_meta
 from .status import collect_status_report
 from .summary import congestion_export_notice
 
@@ -50,7 +51,10 @@ def run_doctor(cfg: CitiesAIConfig | None = None) -> int:
         else:
             print("  export age: unknown")
         if export.get("stale"):
-            print("  warning: export is stale (>30 sec). Load city in-game or wait for next export cycle.")
+            print(
+                f"  warning: export is stale (>{STALE_AFTER_SECONDS} sec). "
+                "Load city in-game or wait for next export cycle."
+            )
         if snapshot is not None and meta is not None:
             congestion_notice = congestion_export_notice(snapshot, meta)
             if congestion_notice:

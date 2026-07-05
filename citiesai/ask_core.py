@@ -7,8 +7,8 @@ from .advice_output import write_advice
 from .city_name import resolve_city_display_name
 from .config import CitiesAIConfig, load_config
 from .conversation import get_conversation
-from .keywords import build_search_queries, is_change_question
 from .historian import get_historian
+from .keywords import build_search_queries, is_change_question
 from .knowledge import format_knowledge_bundle, retrieve_knowledge
 from .llm import generate_agentic_answer, generate_answer
 from .snapshot import SnapshotMeta, load_snapshot_safe, snapshot_meta
@@ -90,9 +90,14 @@ def meta_to_dict(meta: SnapshotMeta) -> dict[str, Any]:
 
 def collect_sources_for_queries(queries: list[str], *, limit: int = 5) -> list[dict[str, Any]]:
     sources: list[dict[str, Any]] = []
+    seen: set[tuple[str, str | None, str | None]] = set()
     for query in queries:
         bundle = retrieve_knowledge(query, limit=limit)
         for hit in bundle.wiki_hits:
+            key = ("wiki", hit.get("title"), hit.get("url"))
+            if key in seen:
+                continue
+            seen.add(key)
             sources.append(
                 {
                     "source": "wiki",
@@ -103,6 +108,10 @@ def collect_sources_for_queries(queries: list[str], *, limit: int = 5) -> list[d
                 }
             )
         for hit in bundle.encyclopedia_hits:
+            key = ("encyclopedia", hit.get("title"), None)
+            if key in seen:
+                continue
+            seen.add(key)
             sources.append(
                 {
                     "source": "encyclopedia",
@@ -114,6 +123,52 @@ def collect_sources_for_queries(queries: list[str], *, limit: int = 5) -> list[d
     return sources[:20]
 
 
+def build_ask_bundle_and_sources(
+    snapshot: dict[str, Any],
+    meta: SnapshotMeta,
+    question: str,
+    *,
+    limit: int = 5,
+) -> tuple[str, list[dict[str, Any]]]:
+    parts: list[str] = [build_city_brief(snapshot, meta), "", f"## Question\n{question}\n"]
+    queries = build_search_queries(snapshot, question)
+    sources: list[dict[str, Any]] = []
+    seen: set[tuple[str, str | None, str | None]] = set()
+    for index, query in enumerate(queries):
+        if index:
+            parts.append("\n---\n")
+        bundle = retrieve_knowledge(query, limit=limit)
+        parts.append(format_knowledge_bundle(bundle, query))
+        for hit in bundle.wiki_hits:
+            key = ("wiki", hit.get("title"), hit.get("url"))
+            if key in seen:
+                continue
+            seen.add(key)
+            sources.append(
+                {
+                    "source": "wiki",
+                    "title": hit.get("title"),
+                    "url": hit.get("url"),
+                    "snippet": hit.get("snippet", "")[:300],
+                    "query": query,
+                }
+            )
+        for hit in bundle.encyclopedia_hits:
+            key = ("encyclopedia", hit.get("title"), None)
+            if key in seen:
+                continue
+            seen.add(key)
+            sources.append(
+                {
+                    "source": "encyclopedia",
+                    "title": hit.get("title"),
+                    "snippet": hit.get("snippet", "")[:300],
+                    "query": query,
+                }
+            )
+    return "\n".join(parts), sources[:20]
+
+
 def build_ask_bundle(
     snapshot: dict[str, Any],
     meta: SnapshotMeta,
@@ -121,16 +176,8 @@ def build_ask_bundle(
     *,
     limit: int = 5,
 ) -> str:
-    parts: list[str] = [build_city_brief(snapshot, meta), "", f"## Question\n{question}\n"]
-    queries = build_search_queries(snapshot, question)
-
-    for index, query in enumerate(queries):
-        if index:
-            parts.append("\n---\n")
-        bundle = retrieve_knowledge(query, limit=limit)
-        parts.append(format_knowledge_bundle(bundle, query))
-
-    return "\n".join(parts)
+    bundle, _sources = build_ask_bundle_and_sources(snapshot, meta, question, limit=limit)
+    return bundle
 
 
 def run_ask(
@@ -166,9 +213,7 @@ def run_ask(
         }
     meta = snapshot_meta(snapshot, path=path)
     brief = build_city_brief(snapshot, meta)
-    bundle = build_ask_bundle(snapshot, meta, question, limit=limit)
-    queries = build_search_queries(snapshot, question)
-    retrieval_sources = collect_sources_for_queries(queries, limit=limit)
+    bundle, retrieval_sources = build_ask_bundle_and_sources(snapshot, meta, question, limit=limit)
 
     conv = get_conversation()
     if multi_turn:
@@ -215,7 +260,8 @@ def run_ask(
             payload["tool_calls"] = result.tool_calls
             payload["fallback_used"] = result.fallback_used
         else:
-            answer = generate_answer(bundle, cfg=cfg)
+            history = conv.messages_for_llm() if multi_turn else None
+            answer = generate_answer(bundle, cfg=cfg, history_messages=history)
     except RuntimeError as exc:
         payload["mode"] = "bundle"
         payload["answer"] = None
