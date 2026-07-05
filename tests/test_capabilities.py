@@ -346,6 +346,17 @@ def test_toast_xml_includes_logo() -> None:
     assert "ToastGeneric" in xml
 
 
+def test_hidden_subprocess_kwargs_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+
+    from citiesai.watch import _hidden_subprocess_kwargs
+
+    monkeypatch.setattr("citiesai.watch.sys.platform", "win32", raising=False)
+    assert _hidden_subprocess_kwargs()["creationflags"] == subprocess.CREATE_NO_WINDOW
+    monkeypatch.setattr("citiesai.watch.sys.platform", "linux", raising=False)
+    assert _hidden_subprocess_kwargs() == {}
+
+
 def test_analyze_budget_deficit(vendor_sample: dict) -> None:
     from citiesai.analyzers.budget import analyze_budget
 

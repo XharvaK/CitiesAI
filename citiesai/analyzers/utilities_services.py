@@ -282,14 +282,6 @@ def analyze_utilities_services(snapshot: dict[str, Any]) -> dict[str, Any]:
                     "ask_prompt": "How do I staff police, fire, health, and education buildings?",
                 }
             )
-    else:
-        services.append(
-            _service_row(
-                row_id="city_services",
-                label="City services",
-                detail="Staffing data unavailable",
-            )
-        )
 
     if (
         healthcare_beds_total is not None

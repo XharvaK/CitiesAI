@@ -23,4 +23,4 @@ def test_analyze_demand_factors_flags_weak_zone() -> None:
     assert report["ok"] is True
     assert len(report["weak_zones"]) == 1
     assert report["weak_zones"][0]["zone"] == "residential"
-    assert "taxes" in report["weak_zones"][0]["detail"]
+    assert report["weak_zones"][0]["detail"] == "Residential demand 22% of bar range"

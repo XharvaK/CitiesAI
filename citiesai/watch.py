@@ -110,6 +110,13 @@ def _save_state(state: dict[str, Any]) -> None:
     path.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
+def _hidden_subprocess_kwargs() -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    return kwargs
+
+
 def windows_toast(title: str, message: str) -> bool:
     if sys.platform != "win32":
         return False
@@ -128,10 +135,11 @@ $xml.Load('{ps_xml_path}')
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{app_id}').Show([Windows.UI.Notifications.ToastNotification]::new($xml))
 """
         subprocess.run(
-            ["powershell", "-NoProfile", "-Command", script],
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script],
             check=False,
             capture_output=True,
             timeout=10,
+            **_hidden_subprocess_kwargs(),
         )
         return True
     except (OSError, subprocess.TimeoutExpired):
@@ -230,14 +238,18 @@ class WatchService:
         self._stop.set()
 
     def _loop(self) -> None:
+        try:
+            self.tick(notify=False)
+        except OSError:
+            pass
         while not self._stop.is_set():
             try:
-                self.tick()
+                self.tick(notify=True)
             except OSError:
                 pass
             self._stop.wait(self._interval)
 
-    def tick(self) -> list[dict[str, str]]:
+    def tick(self, *, notify: bool = True) -> list[dict[str, str]]:
         cfg = load_config()
         path = cfg.resolved_export_path()
         if not path.is_file():
@@ -247,19 +259,7 @@ class WatchService:
             return []
         get_historian().sync(path)
         alerts = evaluate_watch_alerts(snapshot)
-        meta = snapshot_meta(snapshot, path=path)
-        metrics = extract_headline_metrics(snapshot, meta)
-        city = str(metrics.get("city_name") or "unknown")
-        historian = get_historian()
-        for alert in alerts:
-            historian.record_notification(
-                city,
-                alert_id=alert["id"],
-                title=alert["title"],
-                message=alert["message"],
-                severity="warn",
-            )
-        if self._use_toast:
+        if self._use_toast and notify:
             for alert in alerts:
                 windows_toast(alert["title"], alert["message"])
         return alerts

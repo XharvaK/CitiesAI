@@ -122,3 +122,31 @@ def test_analyze_utilities_services_all_clear_rows() -> None:
     assert not report["findings"]
     assert len(report["services"]) >= 5
     assert all(row["severity"] == "ok" for row in report["services"])
+
+
+def test_analyze_utilities_services_hides_city_services_without_staffing_data() -> None:
+    snapshot = {
+        "utilities_services_semantics": {
+            "status": "ok",
+            "electricity_fulfillment_percent": 100.0,
+            "electricity_pressure": "ok",
+            "garbage_accumulation": 1200,
+        },
+        "utility_pressure_semantics": {
+            "status": "ok",
+            "water_pressure": "ok",
+            "sewage_pressure": "ok",
+            "water": {"fulfillment_percent": 100.0},
+            "sewage": {"fulfillment_percent": 100.0},
+            "city_service_fill_percent": None,
+        },
+        "official_city_statistics": {
+            "city_services": {
+                "city_service_workers": 0,
+                "city_service_max_workers": 0,
+            }
+        },
+    }
+    report = analyze_utilities_services(snapshot)
+    service_ids = {row["id"] for row in report["services"]}
+    assert "city_services" not in service_ids

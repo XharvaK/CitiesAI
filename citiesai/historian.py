@@ -13,7 +13,7 @@ from typing import Any
 
 from .city_name import resolve_city_display_name
 from .config import config_dir, load_config
-from .constants import EXPORT_INTERVAL_SECONDS, HISTORY_MAX_POINTS, WATCH_ALERT_COOLDOWN_SECONDS
+from .constants import EXPORT_INTERVAL_SECONDS, HISTORY_MAX_POINTS
 from .dashboard import extract_headline_metrics
 from .snapshot import load_snapshot_safe, snapshot_meta
 
@@ -100,19 +100,6 @@ CREATE TABLE IF NOT EXISTS tracked_issues (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tracked_issues_city ON tracked_issues(city_id, resolved_at);
-
-CREATE TABLE IF NOT EXISTS notifications (
-    id INTEGER PRIMARY KEY,
-    city_id INTEGER NOT NULL REFERENCES cities(id),
-    alert_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    message TEXT NOT NULL,
-    severity TEXT NOT NULL DEFAULT 'info',
-    created_at REAL NOT NULL,
-    read_at REAL
-);
-
-CREATE INDEX IF NOT EXISTS idx_notifications_city_time ON notifications(city_id, created_at DESC);
 """
 
 
@@ -488,106 +475,6 @@ class CityHistorian:
             }
             for row in rows
         ]
-
-    def record_notification(
-        self,
-        city_name: str,
-        *,
-        alert_id: str,
-        title: str,
-        message: str,
-        severity: str = "info",
-    ) -> None:
-        now = datetime.now(UTC).timestamp()
-        with self._lock, self._connect() as conn:
-            city_id = self._city_id(conn, city_name)
-            existing = conn.execute(
-                """
-                SELECT id FROM notifications
-                WHERE city_id = ? AND alert_id = ? AND created_at > ?
-                """,
-                (city_id, alert_id, now - WATCH_ALERT_COOLDOWN_SECONDS),
-            ).fetchone()
-            if existing:
-                return
-            conn.execute(
-                """
-                INSERT INTO notifications(city_id, alert_id, title, message, severity, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (city_id, alert_id, title, message[:500], severity, now),
-            )
-            conn.commit()
-
-    def list_notifications(
-        self,
-        city_name: str,
-        *,
-        limit: int = 50,
-        unread_only: bool = False,
-    ) -> list[dict[str, Any]]:
-        query = """
-            SELECT id, alert_id, title, message, severity, created_at, read_at
-            FROM notifications WHERE city_id = (
-                SELECT id FROM cities WHERE name = ?
-            )
-        """
-        if unread_only:
-            query += " AND read_at IS NULL"
-        query += " ORDER BY created_at DESC LIMIT ?"
-        with self._connect() as conn:
-            rows = conn.execute(query, (city_name, limit)).fetchall()
-        return [
-            {
-                "id": int(row["id"]),
-                "alert_id": str(row["alert_id"]),
-                "title": str(row["title"]),
-                "message": str(row["message"]),
-                "severity": str(row["severity"]),
-                "created_at": float(row["created_at"]),
-                "read_at": float(row["read_at"]) if row["read_at"] is not None else None,
-                "unread": row["read_at"] is None,
-            }
-            for row in rows
-        ]
-
-    def mark_notifications_read(self, city_name: str, notification_ids: list[int] | None = None) -> int:
-        now = datetime.now(UTC).timestamp()
-        with self._lock, self._connect() as conn:
-            city_row = conn.execute("SELECT id FROM cities WHERE name = ?", (city_name,)).fetchone()
-            if not city_row:
-                return 0
-            city_id = int(city_row["id"])
-            if notification_ids:
-                placeholders = ",".join("?" for _ in notification_ids)
-                cursor = conn.execute(
-                    f"""
-                    UPDATE notifications SET read_at = ?
-                    WHERE city_id = ? AND id IN ({placeholders}) AND read_at IS NULL
-                    """,
-                    (now, city_id, *notification_ids),
-                )
-            else:
-                cursor = conn.execute(
-                    """
-                    UPDATE notifications SET read_at = ?
-                    WHERE city_id = ? AND read_at IS NULL
-                    """,
-                    (now, city_id),
-                )
-            conn.commit()
-            return int(cursor.rowcount)
-
-    def unread_notification_count(self, city_name: str) -> int:
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT COUNT(*) AS count FROM notifications
-                WHERE city_id = (SELECT id FROM cities WHERE name = ?) AND read_at IS NULL
-                """,
-                (city_name,),
-            ).fetchone()
-        return int(row["count"]) if row else 0
 
     def get_grade_history(self, city_name: str, *, limit: int = 100) -> dict[str, Any]:
         with self._connect() as conn:

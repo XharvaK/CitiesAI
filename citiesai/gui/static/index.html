@@ -92,8 +92,6 @@
 
       <div class="sidebar-foot">
 
-        <button type="button" id="open-notifications" class="btn ghost btn-sm notification-btn" aria-label="Alerts (0)">ALERTS (0)</button>
-
         <button type="button" id="health-strip" class="health-strip" aria-live="polite">Checking…</button>
 
       </div>
@@ -131,7 +129,7 @@
 
         <div id="mayors-briefing" class="digest-banner briefing-banner" hidden></div>
 
-        <div id="session-digest" class="digest-banner" hidden></div>
+        <div id="session-digest" class="digest-banner digest-banner-row" hidden></div>
 
         <div id="report-card-strip" class="report-card-strip" hidden></div>
 
@@ -175,11 +173,11 @@
             <p class="muted">Setup problems and current city pressures</p>
           </div>
           <div class="issues-header-actions">
-            <label class="toggle-switch toggle-switch-compact" for="watch-enabled" title="Windows toasts when treasury, population, or issues shift">
-              <input type="checkbox" id="watch-enabled" class="toggle-switch-input" />
+            <label class="toggle-switch toggle-switch-compact" for="watch-enabled" title="Push notifications when treasury, population, or issues shift">
+              <input type="checkbox" id="watch-enabled" class="toggle-switch-input" role="switch" />
               <span class="toggle-switch-track" aria-hidden="true"><span class="toggle-switch-thumb"></span></span>
               <span class="toggle-switch-copy">
-                <span class="toggle-switch-title">Desktop notifications</span>
+                <span class="toggle-switch-title">Push Notifications</span>
               </span>
             </label>
           </div>
@@ -187,9 +185,13 @@
 
         <div id="issues-list" class="issues-list"></div>
 
-        <div id="issues-resolved" class="issues-resolved card" hidden>
-          <h2>Recently resolved</h2>
-          <ul id="issues-resolved-list" class="finding-list"></ul>
+        <div id="issues-resolved" class="issues-panel issues-resolved" hidden>
+          <header class="issues-panel-head">
+            <div class="issues-panel-head-main">
+              <h2 class="issues-panel-title">Recently resolved</h2>
+            </div>
+          </header>
+          <ul id="issues-resolved-list" class="issue-feed"></ul>
         </div>
 
       </section>
@@ -271,21 +273,6 @@
 
           </article>
 
-          <article class="card settings-mod">
-            <div class="card-header">
-              <h2>Data export mod</h2>
-              <p class="muted small">Close CS2 first if install fails.</p>
-            </div>
-            <span id="mod-status" class="status-badge">Checking…</span>
-
-            <div class="card-actions">
-
-              <button type="button" id="install-mod" class="btn primary">Install mod</button>
-
-            </div>
-
-          </article>
-
           <article class="card settings-ai">
             <div class="card-header settings-ai-header">
               <div>
@@ -317,29 +304,37 @@
                 <p class="muted small settings-ai-hint">When off, Ask uses one API call with pre-fetched sources — faster on free tiers.</p>
               </div>
               <div class="settings-ai-panel settings-ai-key-block">
-                <label class="field">
-                  <span class="field-label">API key</span>
-                  <input id="api-key" class="control" type="password" placeholder="Paste API key" autocomplete="off" />
-                </label>
-                <p id="key-hint" class="muted small settings-ai-hint">Required for Mistral/OpenAI. Local Ollama can use any placeholder.</p>
+                <span class="field-label">API key</span>
+                <div id="api-key-saved" class="api-key-saved" hidden>
+                  <p id="api-key-saved-title" class="api-key-saved-title">Key saved on this PC</p>
+                  <p id="api-key-saved-suffix" class="api-key-saved-suffix muted small" hidden></p>
+                </div>
+                <div id="api-key-edit">
+                  <label class="field">
+                    <input id="api-key" class="control" type="password" placeholder="Paste API key" autocomplete="off" />
+                  </label>
+                  <p id="key-hint" class="muted small settings-ai-hint">Required for Mistral/OpenAI. Local Ollama can use any placeholder.</p>
+                </div>
               </div>
             </div>
             <div class="card-actions settings-ai-actions">
               <button type="button" id="test-key" class="btn secondary">Test key</button>
+              <button type="button" id="replace-key" class="btn secondary" hidden>Replace key</button>
+              <button type="button" id="remove-key" class="btn ghost" hidden>Remove key</button>
+              <button type="button" id="cancel-replace-key" class="btn ghost" hidden>Cancel</button>
               <button type="button" id="save-key" class="btn primary">Save key</button>
             </div>
           </article>
 
           <article class="card settings-updates">
-            <div class="card-header">
-              <h2>Updates</h2>
-              <p class="muted small">Check GitHub Releases for new CitiesAI installers.</p>
+            <div class="card-header settings-updates-head">
+              <div class="settings-updates-head-copy">
+                <h2>Updates</h2>
+                <p class="muted small">Check GitHub Releases for new CitiesAI installers.</p>
+              </div>
+              <span id="update-current-version" class="update-version-pill">…</span>
             </div>
             <div class="update-settings-body">
-              <p class="update-version-line">
-                <span class="field-label">Current version</span>
-                <strong id="update-current-version">…</strong>
-              </p>
               <p id="update-status" class="muted small">Checking for updates…</p>
               <label class="checkbox">
                 <input id="update-check-startup" type="checkbox" checked />
@@ -350,6 +345,19 @@
               <button type="button" id="update-check-now" class="btn secondary">Check for updates</button>
               <button type="button" id="update-download-install" class="btn primary" hidden>Download &amp; install</button>
               <a id="update-release-notes" class="btn ghost" href="https://github.com/XharvaK/CitiesAI/releases" target="_blank" rel="noopener">Release notes</a>
+            </div>
+          </article>
+
+          <article class="card settings-mod">
+            <div class="settings-mod-row">
+              <div class="settings-mod-copy">
+                <div class="settings-mod-head">
+                  <h2>Data export mod</h2>
+                  <span id="mod-status" class="mod-status-pill">Checking…</span>
+                </div>
+                <p class="muted small settings-mod-hint">Writes city snapshots while you play. Close CS2 first if install fails.</p>
+              </div>
+              <button type="button" id="install-mod" class="btn primary settings-mod-action">Install mod</button>
             </div>
           </article>
 
@@ -382,12 +390,6 @@
             <p class="muted">Report bugs, confusing UI, wrong answers, or feature ideas. We read every submission during beta.</p>
 
             <p class="muted">Feedback is sent to the beta Discord when configured, and always saved locally on your PC.</p>
-
-            <p id="feedback-issues-link" class="feedback-issues-link" hidden>
-
-              <button type="button" class="link-btn" data-view-jump="issues">View issues</button>
-
-            </p>
 
             <p class="muted small">Optional system info includes app version and export freshness only. No city save data.</p>
 
@@ -438,18 +440,6 @@
   </div>
 
 
-
-  <div id="notifications-modal" class="metric-modal" hidden role="dialog" aria-modal="true" aria-labelledby="notifications-modal-title">
-    <div class="metric-modal-backdrop" data-close-notifications-modal></div>
-    <div class="metric-modal-card">
-      <header class="metric-modal-header">
-        <h2 id="notifications-modal-title">Alerts</h2>
-        <button type="button" id="notifications-mark-read" class="btn ghost btn-sm">Mark all read</button>
-        <button type="button" id="notifications-modal-close" class="btn ghost metric-modal-close" aria-label="Close">×</button>
-      </header>
-      <ul id="notifications-list" class="finding-list notifications-list"></ul>
-    </div>
-  </div>
 
   <div id="metric-modal" class="metric-modal" hidden role="dialog" aria-modal="true" aria-labelledby="metric-modal-title">
 

@@ -2,6 +2,22 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.6.2] — 2026-07-05
+
+### UI polish
+
+- **Ask** — answer feedback uses palette-aligned thumb icons (sage up / amber hover / red down) instead of emoji.
+- **Insights** — removed Anomalies card (covered by Issues tab); hide city-services staffing row when export has no data.
+- **Issues** — compact feed layout with severity dots; rows open Ask (city pressures) or Settings (setup); removed session-count meta and duplicate in-app Alerts center.
+- **Settings** — API key configured-state panel; push notifications toggle redesign; Updates + Data export mod paired at bottom; cleaner version pill in Updates card.
+- **Dashboard** — stale age formatting (minutes/hours); removed non-functional Next line advisor card.
+
+### Install
+
+Download **`CitiesAI-Setup-0.6.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+
+---
+
 ## [0.6.1] — 2026-07-05
 
 ### Fixes

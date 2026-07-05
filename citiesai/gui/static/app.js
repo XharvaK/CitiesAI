@@ -53,6 +53,9 @@ let dashboardTimer = null;
 let lastStatus = null;
 let lastIssues = [];
 let llmConfigured = false;
+let lastApiKeyEnv = "MISTRAL_API_KEY";
+let apiKeyReplacing = false;
+let lastKeyUiState = { configured: false, suffix: null, provider: "mistral" };
 let refreshInFlight = false;
 let statusRefreshInFlight = false;
 let lastDashboardData = null;
@@ -172,8 +175,13 @@ function hourlyRateClass(value) {
 
 function formatAge(seconds) {
   if (seconds == null) return "unknown";
-  if (seconds < 120) return `${Math.round(seconds)}s ago`;
-  return `${(seconds / 60).toFixed(1)}m ago`;
+  if (seconds < 60) return `${Math.round(seconds)}s ago`;
+  const totalMinutes = Math.floor(seconds / 60);
+  if (totalMinutes < 60) return `${totalMinutes}m ago`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (minutes === 0) return `${hours}h ago`;
+  return `${hours}h ${minutes}m ago`;
 }
 
 function freshnessCountdown(ageSeconds) {
@@ -508,6 +516,9 @@ function switchView(name, options = {}) {
   }
   if (name === "settings") {
     void loadSettings();
+    if (lastUpdateInfo) {
+      renderUpdateSettings(lastUpdateInfo);
+    }
     void refreshUpdateUi({ force: false });
   }
   if (name === "insights") {
@@ -520,7 +531,6 @@ function switchView(name, options = {}) {
   if (name === "feedback") {
     if (options.category) setFeedbackCategory(options.category);
     if (options.message) $("feedback-message").value = options.message;
-    updateFeedbackIssuesLink();
   }
 }
 
@@ -537,7 +547,6 @@ function applyIssuesData(data) {
   if (lastStatus) {
     renderHealthStrip(lastStatus);
   }
-  updateFeedbackIssuesLink();
 }
 
 const PATH_LABELS = {
@@ -950,6 +959,73 @@ function closeDiagnosticsModal() {
   }
 }
 
+function sessionDigestFingerprint(digest) {
+  const summary = (digest.summary || []).join("|");
+  const resolved = (digest.resolved || []).map((item) => item.title || item.id || "").join("|");
+  return `${digest.session_boundary || ""}::${summary}::${resolved}`;
+}
+
+function isSessionDigestDismissed(fingerprint) {
+  try {
+    return localStorage.getItem("citiesai:dismiss-session-digest") === fingerprint;
+  } catch {
+    return false;
+  }
+}
+
+function dismissSessionDigest(fingerprint) {
+  try {
+    localStorage.setItem("citiesai:dismiss-session-digest", fingerprint);
+  } catch {
+    /* ignore quota errors */
+  }
+  const el = $("session-digest");
+  if (el) {
+    el.hidden = true;
+    el.innerHTML = "";
+  }
+}
+
+function renderSessionDigest(digest) {
+  const digestEl = $("session-digest");
+  if (!digestEl) return;
+
+  let copyHtml = "";
+  if (digest && digest.has_changes && digest.summary && digest.summary.length) {
+    const resolvedLine =
+      digest.resolved?.length
+        ? ` · <strong>Resolved:</strong> ${digest.resolved.map((item) => `${escapeHtml(item.title)} ✓`).join(" · ")}`
+        : "";
+    copyHtml = `<strong>Since last session:</strong> ${digest.summary.map((s) => escapeHtml(s)).join(" · ")}${resolvedLine}`;
+  } else if (digest?.resolved?.length) {
+    copyHtml = `<strong>Resolved since last session:</strong> ${digest.resolved
+      .map((item) => `${escapeHtml(item.title)} ✓`)
+      .join(" · ")}`;
+  } else {
+    digestEl.hidden = true;
+    digestEl.innerHTML = "";
+    return;
+  }
+
+  const fingerprint = sessionDigestFingerprint(digest);
+  if (isSessionDigestDismissed(fingerprint)) {
+    digestEl.hidden = true;
+    digestEl.innerHTML = "";
+    return;
+  }
+
+  digestEl.hidden = false;
+  digestEl.innerHTML = `
+    <div class="digest-banner-copy">${copyHtml}</div>
+    <div class="digest-banner-actions">
+      <button type="button" class="btn ghost btn-sm session-digest-dismiss">Dismiss</button>
+    </div>
+  `;
+  digestEl.querySelector(".session-digest-dismiss")?.addEventListener("click", () => {
+    dismissSessionDigest(fingerprint);
+  });
+}
+
 function renderMayorsBriefing(briefing) {
   const el = $("mayors-briefing");
   if (!el) return;
@@ -985,57 +1061,6 @@ function renderMayorsBriefing(briefing) {
   el.innerHTML = `<div class="briefing-head"><strong>Mayor's briefing</strong></div>${parts.map((p) => `<p class="briefing-line">${p}</p>`).join("")}`;
 }
 
-function updateNotificationBadge(count) {
-  const btn = $("open-notifications");
-  if (!btn) return;
-  const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
-  btn.textContent = `ALERTS (${safeCount})`;
-  btn.setAttribute("aria-label", `Alerts (${safeCount})`);
-  btn.classList.toggle("has-alerts", safeCount > 0);
-}
-
-async function loadNotifications() {
-  try {
-    const data = await fetchJson("/api/notifications");
-    updateNotificationBadge(data.unread_count || 0);
-    const list = $("notifications-list");
-    if (!list) return data;
-    const items = data.notifications || [];
-    if (!items.length) {
-      list.innerHTML = `<li class="muted">No alerts yet.</li>`;
-      return data;
-    }
-    list.innerHTML = items
-      .map(
-        (item) => `<li class="finding-row severity-${escapeAttr(item.severity || "info")} ${item.unread ? "notification-unread" : ""}">
-          <div class="finding-copy">
-            <strong>${escapeHtml(item.title)}</strong>
-            <p class="muted small">${escapeHtml(item.message)}</p>
-          </div>
-        </li>`
-      )
-      .join("");
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-function openNotificationsModal() {
-  const modal = $("notifications-modal");
-  if (!modal) return;
-  void loadNotifications();
-  modal.removeAttribute("hidden");
-  bindModalFocusTrap(modal, closeNotificationsModal);
-  $("notifications-modal-close")?.focus();
-}
-
-function closeNotificationsModal() {
-  const modal = $("notifications-modal");
-  if (!modal || modal.hasAttribute("hidden")) return;
-  modal.setAttribute("hidden", "");
-}
-
 function renderGradeHistoryChart(svg, gradeHistory) {
   if (!svg) return;
   const points = gradeHistory?.points || [];
@@ -1060,30 +1085,6 @@ function renderGradeHistoryChart(svg, gradeHistory) {
     .join(" ");
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   svg.innerHTML = `<polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${coords}" />`;
-}
-
-function renderAccessGapCard(accessGaps) {
-  if (!accessGaps?.ok) {
-    return `<article class="card"><h2>Next line advisor</h2><p class="muted">${escapeHtml(accessGaps?.summary || "Transit access gap data unavailable.")}</p></article>`;
-  }
-  const isCapturing = accessGaps.status === "partial";
-  const hotspots = (accessGaps.hotspots || []).slice(0, 5);
-  const rows = hotspots
-    .map(
-      (row) => `<li class="finding-row severity-${escapeAttr(row.severity || "info")}">
-        <div class="finding-copy">
-          <strong>${escapeHtml(row.label)}</strong> — ${escapeHtml(row.detail)}
-          <p class="muted small">${escapeHtml(row.suggestion || "")}</p>
-        </div>
-        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(row.ask_prompt || accessGaps.ask_prompt)}">Ask</button>
-      </li>`
-    )
-    .join("");
-  return `<article class="card">
-    <h2>Next line advisor</h2>
-    <p class="muted">${escapeHtml(accessGaps.summary || "")}</p>
-    <ul class="finding-list">${rows || `<li class="muted">${isCapturing ? "Capture in progress…" : "No hotspots captured yet."}</li>`}</ul>
-  </article>`;
 }
 
 function renderDemandFactorsCard(demandFactors) {
@@ -1146,8 +1147,14 @@ function renderResolvedIssues(resolved) {
   block.hidden = false;
   list.innerHTML = resolved
     .map(
-      (item) => `<li class="finding-row">
-        <div class="finding-copy"><strong>${escapeHtml(item.title)}</strong> <span class="muted small">resolved</span></div>
+      (item) => `<li class="issue-item severity-info issue-item-resolved">
+        <span class="issue-severity-dot" aria-hidden="true"></span>
+        <div class="issue-item-body">
+          <div class="issue-item-top">
+            <strong class="issue-item-title">${escapeHtml(item.title)}</strong>
+            <span class="issue-item-meta">Resolved</span>
+          </div>
+        </div>
       </li>`
     )
     .join("");
@@ -1166,17 +1173,30 @@ async function submitAnswerFeedback(rating, question, answer) {
   }
 }
 
+function answerFeedbackButton(rating, label) {
+  const icon =
+    rating === "up"
+      ? `<svg class="answer-feedback-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M6.5 17V9.2L4.2 10.8 2.5 9l4.8-5.6L12 9l-1.7 1.6-2.3-1.8V17h-1.5z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
+          <path d="M14.5 17h-2V8.5l1.8-1.4c.8-.6 2-.1 2 .9V17z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
+        </svg>`
+      : `<svg class="answer-feedback-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M6.5 3v7.8l-2.3-1.6L2.5 11l4.8 5.6L12 11l-1.7-1.6-2.3 1.8V3h-1.5z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
+          <path d="M14.5 3h-2v8.5l1.8 1.4c.8.6 2 .1 2-.9V3z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
+        </svg>`;
+  return `<button type="button" class="answer-feedback-btn answer-feedback-${rating}" data-rating="${rating}" title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">${icon}</button>`;
+}
+
 function attachAnswerFeedback(assistantEl, question, answer) {
   if (!assistantEl || assistantEl.querySelector(".answer-feedback")) return;
   const wrap = document.createElement("div");
   wrap.className = "answer-feedback";
-  wrap.innerHTML = `<button type="button" class="btn ghost btn-sm" data-rating="up" title="Helpful">👍</button>
-    <button type="button" class="btn ghost btn-sm" data-rating="down" title="Not helpful">👎</button>`;
+  wrap.innerHTML = `${answerFeedbackButton("up", "Helpful")}${answerFeedbackButton("down", "Not helpful")}`;
   assistantEl.appendChild(wrap);
-  wrap.querySelectorAll("button").forEach((btn) => {
+  wrap.querySelectorAll(".answer-feedback-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       void submitAnswerFeedback(btn.dataset.rating, question, answer);
-      wrap.querySelectorAll("button").forEach((other) => {
+      wrap.querySelectorAll(".answer-feedback-btn").forEach((other) => {
         other.disabled = true;
       });
       btn.classList.add("active");
@@ -1269,27 +1289,8 @@ function renderDashboard(data) {
 
   $("brief-technical").textContent = data.brief || "";
 
-  const digestEl = $("session-digest");
-  const digest = data.session_digest;
-  if (digest && digest.has_changes && digest.summary && digest.summary.length) {
-    digestEl.hidden = false;
-    const resolvedLine =
-      digest.resolved?.length
-        ? ` · <strong>Resolved:</strong> ${digest.resolved.map((item) => `${escapeHtml(item.title)} ✓`).join(" · ")}`
-        : "";
-    digestEl.innerHTML = `<strong>Since last session:</strong> ${digest.summary.map((s) => escapeHtml(s)).join(" · ")}${resolvedLine}`;
-  } else if (digest?.resolved?.length) {
-    digestEl.hidden = false;
-    digestEl.innerHTML = `<strong>Resolved since last session:</strong> ${digest.resolved
-      .map((item) => `${escapeHtml(item.title)} ✓`)
-      .join(" · ")}`;
-  } else {
-    digestEl.hidden = true;
-    digestEl.innerHTML = "";
-  }
-
+  renderSessionDigest(data.session_digest);
   renderMayorsBriefing(data.briefing);
-  updateNotificationBadge(data.notifications?.unread_count || 0);
 
   const cardStrip = $("report-card-strip");
   const card = data.report_card;
@@ -1326,66 +1327,94 @@ function renderDashboard(data) {
   }
 }
 
+function isIssueActionable(issue) {
+  return Boolean(issue.ask_prompt || issue.action_view === "settings");
+}
+
+function handleIssueRowClick(btn) {
+  const prompt = btn.dataset.prompt;
+  if (prompt) {
+    askFromPrompt(prompt);
+    return;
+  }
+  if (btn.dataset.actionView === "settings") {
+    switchView("settings");
+  }
+}
+
 function renderIssueCard(issue) {
-  const severityLabel =
-    issue.severity === "error" ? "Error" : issue.severity === "warn" ? "Warning" : "Note";
-  const detailParts = [issue.detail];
-  if (issue.hint) detailParts.push(issue.hint);
-  if (issue.session_count > 1) detailParts.push(`Ongoing for ${issue.session_count} sessions`);
-  const detailText = detailParts.filter(Boolean).join(" — ");
+  const detailParts = [issue.detail, issue.hint].filter(Boolean);
+  const detailText = detailParts.join(" — ");
+  const severityClass = `severity-${escapeAttr(issue.severity)}`;
+  const bodyHtml = `<span class="issue-severity-dot" aria-hidden="true"></span>
+    <div class="issue-item-body">
+      <strong class="issue-item-title">${escapeHtml(issue.title)}</strong>
+      ${detailText ? `<p class="issue-item-detail">${escapeHtml(detailText)}</p>` : ""}
+    </div>`;
 
-  const actions = [];
-  if (issue.ask_prompt) {
-    actions.push(
-      `<button type="button" class="btn ghost btn-sm insight-ask issue-ask" data-prompt="${escapeAttr(issue.ask_prompt)}">Ask</button>`
-    );
-  }
-  if (issue.action_view === "settings") {
-    actions.push(`<button type="button" class="btn ghost btn-sm issue-settings">Settings</button>`);
+  if (!isIssueActionable(issue)) {
+    return `<li class="issue-item ${severityClass}">${bodyHtml}</li>`;
   }
 
-  return `<article class="issue-card severity-${escapeAttr(issue.severity)}">
-    <div class="issue-card-head">
-      <span class="issue-pill">${severityLabel}</span>
-      <strong class="issue-title">${escapeHtml(issue.title)}</strong>
-    </div>
-    <p class="issue-detail muted small">${escapeHtml(detailText)}</p>
-    ${actions.length ? `<div class="issue-card-actions">${actions.join("")}</div>` : ""}
-  </article>`;
+  const ariaLabel = issue.ask_prompt
+    ? `Ask about ${issue.title}`
+    : `Open settings: ${issue.title}`;
+  const promptAttr = issue.ask_prompt ? ` data-prompt="${escapeAttr(issue.ask_prompt)}"` : "";
+  const actionAttr = issue.action_view ? ` data-action-view="${escapeAttr(issue.action_view)}"` : "";
+
+  return `<li><button type="button" class="issue-item issue-item-btn ${severityClass}" aria-label="${escapeAttr(ariaLabel)}"${promptAttr}${actionAttr}>
+    ${bodyHtml}
+    <span class="issue-item-chevron" aria-hidden="true">›</span>
+  </button></li>`;
+}
+
+function renderIssueSection(title, issueList) {
+  if (!issueList.length) return "";
+  const critical = issueList.filter((issue) => issue.severity === "error").length;
+  const warnings = issueList.filter((issue) => issue.severity === "warn").length;
+  const summaryParts = [];
+  if (critical) summaryParts.push(`${critical} critical`);
+  if (warnings) summaryParts.push(`${warnings} warning${warnings === 1 ? "" : "s"}`);
+  const summary = summaryParts.length
+    ? `<span class="issues-panel-summary">${summaryParts.join(" · ")}</span>`
+    : "";
+
+  return `<section class="issues-panel">
+    <header class="issues-panel-head">
+      <div class="issues-panel-head-main">
+        <h2 class="issues-panel-title">${title}</h2>
+        ${summary}
+      </div>
+      <span class="issues-count-badge">${issueList.length}</span>
+    </header>
+    <ul class="issue-feed">${issueList.map((issue) => renderIssueCard(issue)).join("")}</ul>
+  </section>`;
 }
 
 function renderIssues(issues) {
   const list = $("issues-list");
   if (!issues.length) {
     list.innerHTML = `<div class="issues-empty">
-      <span class="issues-empty-icon">✓</span>
-      <p>No issues right now.</p>
+      <span class="issues-empty-icon" aria-hidden="true">✓</span>
+      <div>
+        <p class="issues-empty-title">All clear</p>
+        <p class="issues-empty-lead muted small">No setup or city issues right now.</p>
+      </div>
     </div>`;
     return;
   }
 
   const cityIssues = issues.filter((issue) => issue.kind === "city");
   const setupIssues = issues.filter((issue) => issue.kind !== "city");
-  const sections = [];
-
-  if (cityIssues.length) {
-    sections.push(
-      `<div class="issues-section"><h2 class="issues-section-title">Your city <span class="issues-section-count">${cityIssues.length}</span></h2><div class="issue-stack">${cityIssues.map((issue) => renderIssueCard(issue)).join("")}</div></div>`
-    );
-  }
-  if (setupIssues.length) {
-    sections.push(
-      `<div class="issues-section"><h2 class="issues-section-title">Setup &amp; app <span class="issues-section-count">${setupIssues.length}</span></h2><div class="issue-stack">${setupIssues.map((issue) => renderIssueCard(issue)).join("")}</div></div>`
-    );
-  }
+  const sections = [
+    renderIssueSection("Your city", cityIssues),
+    renderIssueSection("Setup &amp; app", setupIssues),
+  ].filter(Boolean);
 
   list.innerHTML = sections.join("");
 
-  list.querySelectorAll(".issue-ask").forEach((btn) => {
-    btn.addEventListener("click", () => askFromPrompt(btn.dataset.prompt));
-  });
-  list.querySelectorAll(".issue-settings").forEach((btn) => {
-    btn.addEventListener("click", () => switchView("settings"));
+  list.querySelectorAll(".issue-item-btn").forEach((btn) => {
+    btn.addEventListener("click", () => handleIssueRowClick(btn));
   });
 }
 
@@ -1483,7 +1512,6 @@ async function loadStatus({ promptOnboarding = false } = {}) {
       }
     }
     renderHealthStrip(status);
-    updateFeedbackIssuesLink();
 
     if (promptOnboarding && !onboardingDismissed && !status.onboarding_complete) {
       showOnboarding();
@@ -1822,11 +1850,9 @@ async function loadInsights() {
     }
     const card = data.report_card;
     const transit = data.transit;
-    const accessGaps = data.access_gaps;
     const demandFactors = data.demand_factors;
     const utilities = data.utilities_services;
     const housing = data.housing;
-    const anomalies = data.anomalies || [];
     const gradeHistory = data.grade_history;
 
     const domainHtml = card.domains.map((d) => {
@@ -1858,13 +1884,6 @@ async function loadInsights() {
       </li>`
     ).join("");
 
-    const anomalyHtml = anomalies.map((a) =>
-      `<li class="finding-row insight-anomaly-row">
-        <div class="finding-copy"><strong>${escapeHtml(a.title)}</strong> — ${escapeHtml(a.detail)}</div>
-        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(a.ask_prompt || a.title)}">Ask</button>
-      </li>`
-    ).join("");
-
     root.innerHTML = `
       <article class="card">
         <h2>Report card — ${escapeHtml(card.overall_grade)} (${card.overall_score}/100)</h2>
@@ -1876,8 +1895,6 @@ async function loadInsights() {
       </article>
       ${renderDemandFactorsCard(demandFactors)}
       ${renderUtilitiesCard(utilities)}
-      ${anomalies.length ? `<article class="card"><h2>Anomalies</h2><ul class="finding-list">${anomalyHtml}</ul></article>` : ""}
-      ${renderAccessGapCard(accessGaps)}
       <article class="card">
         <h2>Transit doctor</h2>
         <p class="muted">${escapeHtml(transit.summary || "")}</p>
@@ -1918,6 +1935,57 @@ function updateKeyHint(provider) {
   }
 }
 
+function renderApiKeyState({ configured, suffix, provider, verified = false, replacing = false }) {
+  const savedBlock = $("api-key-saved");
+  const editBlock = $("api-key-edit");
+  const savedTitle = $("api-key-saved-title");
+  const savedSuffix = $("api-key-saved-suffix");
+  const replaceBtn = $("replace-key");
+  const removeBtn = $("remove-key");
+  const cancelBtn = $("cancel-replace-key");
+  const saveBtn = $("save-key");
+  const keyLine = $("key-status");
+  if (!savedBlock || !editBlock) return;
+
+  const isLocal = provider === "local";
+  const showConfigured = configured && !replacing;
+
+  savedBlock.hidden = !showConfigured;
+  editBlock.hidden = showConfigured;
+  if (replaceBtn) replaceBtn.hidden = !showConfigured || isLocal;
+  if (removeBtn) removeBtn.hidden = !showConfigured;
+  if (cancelBtn) cancelBtn.hidden = !replacing;
+  if (saveBtn) saveBtn.hidden = showConfigured;
+
+  if (showConfigured) {
+    savedTitle.textContent = isLocal
+      ? "Local provider — no cloud key required"
+      : "Key saved on this PC";
+    if (savedSuffix && suffix && !isLocal) {
+      savedSuffix.hidden = false;
+      savedSuffix.innerHTML = `Ends with <span class="api-key-suffix-mono">···${escapeHtml(suffix)}</span>`;
+    } else if (savedSuffix) {
+      savedSuffix.hidden = true;
+      savedSuffix.textContent = "";
+    }
+  } else if (replacing) {
+    $("api-key")?.focus();
+  }
+
+  if (keyLine) {
+    if (verified) {
+      keyLine.textContent = "API key verified";
+      keyLine.className = "key-status-pill ok";
+    } else if (configured) {
+      keyLine.textContent = "API key configured";
+      keyLine.className = "key-status-pill ok";
+    } else {
+      keyLine.textContent = "No API key saved";
+      keyLine.className = "key-status-pill muted";
+    }
+  }
+}
+
 function renderUpdateBanner(info) {
   const banner = $("update-banner");
   if (!banner) return;
@@ -1951,6 +2019,15 @@ function renderUpdateBanner(info) {
   });
 }
 
+function formatUpdateCheckedAt(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
 function renderUpdateSettings(info) {
   const current = $("update-current-version");
   const status = $("update-status");
@@ -1971,8 +2048,10 @@ function renderUpdateSettings(info) {
     installBtn.hidden = true;
     return;
   }
+
+  let statusText = "";
   if (info.status_message) {
-    status.textContent = info.status_message;
+    statusText = info.status_message;
     status.className = info.warning || info.error ? "muted small update-status-warn" : "muted small";
   } else if (info.error) {
     status.textContent = info.error;
@@ -1980,15 +2059,19 @@ function renderUpdateSettings(info) {
     installBtn.hidden = true;
     return;
   } else if (info.update_available) {
-    status.textContent = `v${info.latest_version} is available on GitHub.`;
+    statusText = `v${info.latest_version} is available on GitHub.`;
     status.className = "muted small";
   } else if (info.latest_version) {
-    status.textContent = `No updates available — you're on the latest release (v${info.latest_version}).`;
+    statusText = `No updates available — you're on the latest release (v${info.latest_version}).`;
     status.className = "muted small";
   } else {
-    status.textContent = "No updates available.";
+    statusText = "No updates available.";
     status.className = "muted small";
   }
+
+  const checkedAt = formatUpdateCheckedAt(info.checked_at);
+  status.textContent = checkedAt ? `${statusText} · Checked ${checkedAt}` : statusText;
+
   if (info.update_available) {
     installBtn.hidden = false;
     installBtn.textContent = info.can_install ? "Download & install" : "Open release page";
@@ -1999,14 +2082,22 @@ function renderUpdateSettings(info) {
 }
 
 async function refreshUpdateUi({ force = false } = {}) {
-  if (updateCheckInFlight) return lastUpdateInfo;
+  if (updateCheckInFlight) {
+    if (!force) return lastUpdateInfo;
+    while (updateCheckInFlight) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
   updateCheckInFlight = true;
+  if (force && $("view-settings")?.classList.contains("active")) {
+    renderUpdateSettings(null);
+  }
   try {
     const query = force ? "?force=1" : "";
     const info = await fetchJson(`/api/update/check${query}`);
     lastUpdateInfo = info;
     renderUpdateBanner(info);
-    if ($("view-settings")?.classList.contains("active")) {
+    if (force || $("view-settings")?.classList.contains("active")) {
       renderUpdateSettings(info);
     }
     return info;
@@ -2016,10 +2107,29 @@ async function refreshUpdateUi({ force = false } = {}) {
       check_on_startup: lastUpdateInfo?.check_on_startup !== false,
       error: String(err.message || err),
     };
-    renderUpdateSettings(fallback);
+    if (force || $("view-settings")?.classList.contains("active")) {
+      renderUpdateSettings(fallback);
+    }
+    if (force) toast(String(err.message || err), "err");
     return null;
   } finally {
     updateCheckInFlight = false;
+  }
+}
+
+async function runUpdateCheckNow() {
+  const btn = $("update-check-now");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Checking…";
+  }
+  try {
+    await refreshUpdateUi({ force: true });
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Check for updates";
+    }
   }
 }
 
@@ -2102,21 +2212,31 @@ async function loadSettings() {
         providerSelect.onchange = () => {
           const preset = presets.presets[providerSelect.value];
           if (preset) $("setup-model").value = preset.model;
+          lastKeyUiState.provider = providerSelect.value;
           updateKeyHint(providerSelect.value);
+          renderApiKeyState({ ...lastKeyUiState, replacing: apiKeyReplacing });
         };
       }
     } catch { /* ignore */ }
     const modBadge = $("mod-status");
-    modBadge.textContent = data.mod_installed ? "Installed" : "Not installed";
-    modBadge.className = `status-badge ${data.mod_installed ? "ok" : "missing"}`;
-    const keyLine = $("key-status");
-    if (data.llm_configured) {
-      keyLine.textContent = "API key configured";
-      keyLine.className = "key-status-pill ok";
-    } else {
-      keyLine.textContent = "No API key saved";
-      keyLine.className = "key-status-pill muted";
+    const installBtn = $("install-mod");
+    if (modBadge) {
+      modBadge.textContent = data.mod_installed ? "Installed" : "Not installed";
+      modBadge.className = `mod-status-pill ${data.mod_installed ? "ok" : "missing"}`;
     }
+    if (installBtn) {
+      installBtn.textContent = data.mod_installed ? "Reinstall" : "Install mod";
+      installBtn.classList.toggle("primary", !data.mod_installed);
+      installBtn.classList.toggle("secondary", Boolean(data.mod_installed));
+    }
+    lastApiKeyEnv = data.llm_api_key_env || "MISTRAL_API_KEY";
+    lastKeyUiState = {
+      configured: Boolean(data.llm_configured),
+      suffix: data.api_key_suffix || null,
+      provider: data.llm_provider || "mistral",
+    };
+    apiKeyReplacing = false;
+    renderApiKeyState({ ...lastKeyUiState, replacing: false });
     if (lastUpdateInfo) {
       renderUpdateSettings(lastUpdateInfo);
     }
@@ -2134,12 +2254,6 @@ function setFeedbackCategory(category) {
   });
   const placeholder = FEEDBACK_PLACEHOLDERS[category] || FEEDBACK_PLACEHOLDERS.general;
   $("feedback-message").placeholder = placeholder;
-}
-
-function updateFeedbackIssuesLink() {
-  const link = $("feedback-issues-link");
-  const blocking = lastIssues.filter((i) => i.severity === "error" || i.severity === "warn");
-  link.hidden = blocking.length === 0;
 }
 
 async function detectGame() {
@@ -2257,19 +2371,6 @@ document.querySelectorAll("[data-view-jump]").forEach((btn) => {
 });
 
 
-$("open-notifications")?.addEventListener("click", () => openNotificationsModal());
-$("notifications-modal-close")?.addEventListener("click", closeNotificationsModal);
-document.querySelector("[data-close-notifications-modal]")?.addEventListener("click", closeNotificationsModal);
-$("notifications-mark-read")?.addEventListener("click", async () => {
-  try {
-    await fetchJson("/api/notifications/read", { method: "POST", body: "{}" });
-    await loadNotifications();
-    toast("Alerts marked read", "ok");
-  } catch (err) {
-    toast(String(err.message || err), "err");
-  }
-});
-
 $("ask-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const input = $("question");
@@ -2324,8 +2425,8 @@ $("watch-enabled")?.addEventListener("change", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled: e.target.checked }),
     });
-    toast(e.target.checked ? "Desktop notifications on" : "Desktop notifications off", "ok");
   } catch (err) {
+    e.target.checked = !e.target.checked;
     toast(String(err.message || err), "err");
   }
 });
@@ -2355,7 +2456,7 @@ $("save-setup").addEventListener("click", async () => {
 $("redetect-paths").addEventListener("click", loadSettings);
 
 $("update-check-now")?.addEventListener("click", () => {
-  void refreshUpdateUi({ force: true });
+  void runUpdateCheckNow();
 });
 
 $("update-download-install")?.addEventListener("click", () => {
@@ -2390,10 +2491,49 @@ $("install-mod").addEventListener("click", async () => {
     if (!data.ok) throw new Error(data.error);
     toast(`Mod installed to ${data.installed_to}`, "ok");
     const modBadge = $("mod-status");
-    modBadge.textContent = "Installed";
-    modBadge.className = "status-badge ok";
+    const installBtn = $("install-mod");
+    if (modBadge) {
+      modBadge.textContent = "Installed";
+      modBadge.className = "mod-status-pill ok";
+    }
+    if (installBtn) {
+      installBtn.textContent = "Reinstall";
+      installBtn.classList.remove("primary");
+      installBtn.classList.add("secondary");
+    }
     loadStatus();
     refreshIssues();
+  } catch (err) {
+    toast(String(err.message || err), "err");
+  }
+});
+
+$("replace-key").addEventListener("click", () => {
+  apiKeyReplacing = true;
+  $("api-key").value = "";
+  renderApiKeyState({ ...lastKeyUiState, replacing: true });
+});
+
+$("cancel-replace-key").addEventListener("click", () => {
+  apiKeyReplacing = false;
+  $("api-key").value = "";
+  renderApiKeyState({ ...lastKeyUiState, replacing: false });
+});
+
+$("remove-key").addEventListener("click", async () => {
+  if (!confirm("Remove the saved API key from this PC?")) return;
+  try {
+    await fetchJson("/api/settings/key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: "", env_name: lastApiKeyEnv }),
+    });
+    apiKeyReplacing = false;
+    toast("API key removed", "ok");
+    await loadSettings();
+    await loadStatus();
+    llmConfigured = false;
+    updateAskHelper();
   } catch (err) {
     toast(String(err.message || err), "err");
   }
@@ -2404,13 +2544,18 @@ $("save-key").addEventListener("click", async () => {
     await fetchJson("/api/settings/key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: $("api-key").value.trim() }),
+      body: JSON.stringify({
+        api_key: $("api-key").value.trim(),
+        env_name: lastApiKeyEnv,
+      }),
     });
     toast("API key saved locally", "ok");
-    $("key-status").textContent = "API key saved — use Test key to verify";
-    $("key-status").className = "key-status-pill muted";
+    apiKeyReplacing = false;
     $("api-key").value = "";
+    await loadSettings();
     await loadStatus();
+    llmConfigured = true;
+    updateAskHelper();
   } catch (err) {
     toast(String(err.message || err), "err");
   }
@@ -2422,15 +2567,14 @@ $("test-key").addEventListener("click", async () => {
     await fetchJson("/api/settings/key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: key }),
+      body: JSON.stringify({ api_key: key, env_name: lastApiKeyEnv }),
     });
   }
   try {
     const data = await fetchJson("/api/settings/key/test");
     if (!data.ok) throw new Error(data.error);
     toast(`Key OK (${data.model})`, "ok");
-    $("key-status").textContent = "API key verified";
-    $("key-status").className = "key-status-pill ok";
+    renderApiKeyState({ ...lastKeyUiState, verified: true, replacing: apiKeyReplacing });
     llmConfigured = true;
     updateAskHelper();
   } catch (err) {

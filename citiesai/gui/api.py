@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from ..analyzers import (
-    analyze_access_gaps,
     analyze_budget,
     analyze_demand_factors,
     analyze_housing_labor,
@@ -29,7 +28,7 @@ from ..constants import HISTORY_MAX_POINTS
 from ..conversation import get_conversation
 from ..dashboard import extract_headline_metrics
 from ..discovery import discover_paths
-from ..env_store import clear_env_var, save_env_var
+from ..env_store import api_key_suffix, clear_env_var, read_env_var, save_env_var
 from ..feedback import submit_feedback
 from ..forecasts import build_forecasts
 from ..historian import get_historian
@@ -199,16 +198,12 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         "meta": meta_to_dict(meta),
         "metrics": extract_headline_metrics(snapshot, meta),
         "historian": hist,
-        "anomalies": historian.detect_anomalies(history=hist),
         "brief": build_city_brief(snapshot, meta),
         "report_card": report_card,
         "forecasts": forecasts,
         "session_digest": digest,
         "briefing": briefing,
         "grade_history": historian.get_grade_history(city_name, limit=limit),
-        "notifications": {
-            "unread_count": historian.unread_notification_count(city_name),
-        },
         "issues": issues,
     }
 
@@ -333,6 +328,8 @@ def api_setup_preview() -> dict[str, Any]:
     discovered = discover_paths()
     cfg = merge_discovered(load_config(), discovered)
     llm = resolve_llm_settings(cfg)
+    stored_key = read_env_var(cfg.llm_api_key_env)
+    suffix = api_key_suffix(stored_key)
     return {
         "ok": True,
         "source": discovered.source,
@@ -343,6 +340,7 @@ def api_setup_preview() -> dict[str, Any]:
         "llm_provider": cfg.llm_provider,
         "llm_api_key_env": cfg.llm_api_key_env,
         "llm_configured": llm is not None,
+        "api_key_suffix": suffix,
         "llm_agentic_enabled": cfg.llm_agentic_enabled,
         "llm_max_tool_rounds": cfg.llm_max_tool_rounds,
         "config_exists": config_path().is_file(),
@@ -443,40 +441,6 @@ def api_briefing() -> dict[str, Any]:
     return {"ok": True, "briefing": briefing}
 
 
-def api_notifications(*, unread_only: bool = False) -> dict[str, Any]:
-    cfg = load_config()
-    export_path = cfg.resolved_export_path()
-    if not export_path.is_file():
-        return {"ok": True, "notifications": [], "unread_count": 0}
-    snapshot, err = load_snapshot_safe(export_path)
-    if snapshot is None:
-        return {"ok": True, "notifications": [], "unread_count": 0}
-    meta = snapshot_meta(snapshot, path=export_path)
-    city_name = resolve_city_display_name(snapshot, meta)
-    historian = get_historian()
-    notifications = historian.list_notifications(city_name, unread_only=unread_only)
-    return {
-        "ok": True,
-        "notifications": notifications,
-        "unread_count": historian.unread_notification_count(city_name),
-    }
-
-
-def api_notifications_mark_read(body: dict[str, Any] | None = None) -> dict[str, Any]:
-    body = body or {}
-    cfg = load_config()
-    export_path = cfg.resolved_export_path()
-    snapshot, _ = load_snapshot_safe(export_path) if export_path.is_file() else (None, None)
-    if snapshot is None:
-        return {"ok": False, "error": "No city export yet"}
-    meta = snapshot_meta(snapshot, path=export_path)
-    city_name = resolve_city_display_name(snapshot, meta)
-    ids_raw = body.get("ids")
-    ids = [int(value) for value in ids_raw] if isinstance(ids_raw, list) else None
-    count = get_historian().mark_notifications_read(city_name, ids)
-    return {"ok": True, "marked_read": count}
-
-
 def api_insights() -> dict[str, Any]:
     cfg = load_config()
     export_path = cfg.resolved_export_path()
@@ -494,12 +458,10 @@ def api_insights() -> dict[str, Any]:
         "ok": True,
         "report_card": build_and_persist_report_card(snapshot, meta, historian=historian),
         "transit": analyze_transit_lines(snapshot),
-        "access_gaps": analyze_access_gaps(snapshot),
         "demand_factors": analyze_demand_factors(snapshot),
         "utilities_services": analyze_utilities_services(snapshot),
         "housing": analyze_housing_labor(snapshot),
         "budget": analyze_budget(snapshot),
-        "anomalies": historian.detect_anomalies(history=hist),
         "grade_history": historian.get_grade_history(city_name),
     }
 
@@ -555,6 +517,8 @@ def api_llm_presets() -> dict[str, Any]:
 
 
 def api_update_check(*, force: bool = False) -> dict[str, Any]:
+    if force:
+        clear_update_cache()
     result = check_for_update(force=force)
     payload = result.to_dict()
     payload["ok"] = result.ok

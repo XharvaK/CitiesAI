@@ -38,8 +38,6 @@ from .api import (
     api_install_mod,
     api_issues,
     api_llm_presets,
-    api_notifications,
-    api_notifications_mark_read,
     api_onboarding_complete,
     api_save_key,
     api_setup_preview,
@@ -176,7 +174,6 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/insights": api_insights,
             "/api/briefing": api_briefing,
             "/api/issues": api_issues,
-            "/api/notifications": api_notifications,
             "/api/suggestions": api_suggestions,
             "/api/setup": api_setup_preview,
             "/api/settings/key/test": api_test_key,
@@ -199,10 +196,6 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
                     limit = HISTORY_MAX_POINTS
                 limit = max(10, min(limit, HISTORY_MAX_POINTS))
                 result = api_dashboard(limit=limit)
-            elif route == "/api/notifications":
-                qs = parse_qs(parsed.query)
-                unread_only = qs.get("unread", ["0"])[0] in {"1", "true", "yes"}
-                result = api_notifications(unread_only=unread_only)
             else:
                 result = handler()
         except Exception as exc:  # noqa: BLE001 - return JSON for GUI clients
@@ -245,7 +238,6 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/install-mod": api_install_mod,
             "/api/feedback": api_feedback,
             "/api/feedback/answer": api_feedback_answer,
-            "/api/notifications/read": api_notifications_mark_read,
             "/api/watch": api_watch_toggle,
             "/api/chat/clear": api_clear_chat,
             "/api/report/export": api_export_report,

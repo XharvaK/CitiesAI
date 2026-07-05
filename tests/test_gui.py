@@ -8,7 +8,7 @@ import pytest
 
 from citiesai.ask_core import run_ask
 from citiesai.dashboard import extract_headline_metrics, unemployment_from_workforce
-from citiesai.env_store import save_env_var
+from citiesai.env_store import api_key_suffix, read_env_var, save_env_var
 from citiesai.feedback import submit_feedback
 from citiesai.gui.api import api_dashboard, api_setup_preview, api_status, api_version
 from citiesai.gui.server import _static_file
@@ -170,6 +170,41 @@ def test_save_env_var(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert "TEST_KEY" in path.read_text(encoding="utf-8")
 
 
+def test_read_env_var_reads_saved_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("citiesai.env_store._config_dir", lambda: tmp_path)
+    monkeypatch.delenv("TEST_KEY", raising=False)
+    save_env_var("TEST_KEY", "sk-test-secret9abc")
+    monkeypatch.delenv("TEST_KEY", raising=False)
+    assert read_env_var("TEST_KEY") == "sk-test-secret9abc"
+
+
+def test_api_key_suffix_masks_key() -> None:
+    assert api_key_suffix("sk-test-secret9abc") == "9abc"
+    assert api_key_suffix("local") is None
+    assert api_key_suffix("abc") is None
+
+
+def test_api_setup_preview_includes_api_key_suffix(monkeypatch: pytest.MonkeyPatch) -> None:
+    from citiesai.llm import LLMSettings
+
+    monkeypatch.setattr(
+        "citiesai.gui.api.read_env_var",
+        lambda _name: "sk-test-secret9abc",
+    )
+    monkeypatch.setattr(
+        "citiesai.gui.api.resolve_llm_settings",
+        lambda _cfg: LLMSettings(
+            base_url="https://api.mistral.ai/v1",
+            model="mistral-medium-latest",
+            api_key="sk-test-secret9abc",
+            api_key_env="MISTRAL_API_KEY",
+        ),
+    )
+    result = api_setup_preview()
+    assert result["llm_configured"] is True
+    assert result["api_key_suffix"] == "9abc"
+
+
 def test_api_install_mod_accepts_post_body() -> None:
     from citiesai.gui.api import api_install_mod
 
@@ -236,7 +271,7 @@ def test_static_index_contains_title() -> None:
     assert b"Issues" in body
     assert b"metric-modal" in body
     assert b"diagnostics-modal" in body
-    assert b"settings-diagnostics" not in body
+    assert b"api-key-saved" in body
 
 
 def test_api_setup_preview_keys() -> None:

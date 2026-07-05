@@ -5,6 +5,7 @@ from typing import Any
 
 from .config import CitiesAIConfig, config_path, load_config
 from .discovery import discover_paths
+from .env_store import api_key_suffix, read_env_var
 from .knowledge import knowledge_status
 from .llm import resolve_llm_settings
 from .snapshot import load_snapshot_safe, snapshot_meta
@@ -75,6 +76,9 @@ def collect_status_report(cfg: CitiesAIConfig | None = None) -> dict[str, Any]:
     }
     if llm:
         llm_block["api_key_set"] = True
+        suffix = api_key_suffix(read_env_var(cfg.llm_api_key_env))
+        if suffix:
+            llm_block["api_key_suffix"] = suffix
     else:
         llm_block["api_key_set"] = False
         llm_block["hint"] = "Set MISTRAL_API_KEY for LLM answers in the GUI."

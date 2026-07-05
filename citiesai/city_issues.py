@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from .analyzers.access_gaps import analyze_access_gaps
 from .analyzers.demand_factors import analyze_demand_factors
 from .analyzers.utilities_services import analyze_utilities_services
 from .snapshot import pick, pick_group
@@ -373,22 +372,6 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                 title="Transit lines without service",
                 detail=f"{int(no_service_lines)} transit lines have no active vehicles.",
                 ask_prompt="Which transit lines need more vehicles?",
-            )
-        )
-
-    access_gaps = analyze_access_gaps(snapshot)
-    if access_gaps.get("ok") and access_gaps.get("hotspots_with_uncovered_demand", 0) > 0:
-        top = access_gaps.get("top_recommendation") or access_gaps.get("summary", "")
-        issues.append(
-            _city_issue(
-                "city_transit_access_gaps",
-                severity="warn",
-                title="Uncovered transit demand",
-                detail=f"{access_gaps['hotspots_with_uncovered_demand']} hotspot(s) lack stop coverage. {top}",
-                ask_prompt=access_gaps.get(
-                    "ask_prompt",
-                    "Where should I build my next transit line?",
-                ),
             )
         )
 

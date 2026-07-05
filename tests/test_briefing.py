@@ -53,7 +53,8 @@ def test_mayors_briefing_has_text(tmp_path: Path, vendor_sample: dict) -> None:
     assert briefing["city_name"]
 
 
-def test_detect_city_issues_includes_access_gap_when_uncovered() -> None:
+
+def test_detect_city_issues_ignores_access_gap_hotspots() -> None:
     snapshot = {
         "population": {"total_population": 1000},
         "official_city_statistics": {
@@ -83,4 +84,4 @@ def test_detect_city_issues_includes_access_gap_when_uncovered() -> None:
     }
     issues = detect_city_issues(snapshot)
     ids = {issue["id"] for issue in issues}
-    assert "city_transit_access_gaps" in ids
+    assert "city_transit_access_gaps" not in ids

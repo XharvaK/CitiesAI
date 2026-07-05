@@ -40,6 +40,33 @@ def load_env_file() -> None:
         os.environ[key] = value
 
 
+def read_env_var(name: str) -> str | None:
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+    path = env_file_path()
+    if not path.is_file():
+        return None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = _ENV_LINE.match(line)
+        if not match or match.group(1) != name:
+            continue
+        raw_value = match.group(2).strip()
+        if len(raw_value) >= 2 and raw_value[0] == raw_value[-1] and raw_value[0] in {'"', "'"}:
+            raw_value = raw_value[1:-1]
+        return raw_value.strip() or None
+    return None
+
+
+def api_key_suffix(key: str | None) -> str | None:
+    if not key or key == "local" or len(key) < 4:
+        return None
+    return key[-4:]
+
+
 def save_env_var(name: str, value: str) -> Path:
     path = env_file_path()
     path.parent.mkdir(parents=True, exist_ok=True)

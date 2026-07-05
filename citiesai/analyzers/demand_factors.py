@@ -29,18 +29,6 @@ def _factor_map(group: dict[str, Any], *keys: str) -> dict[str, int]:
     return factors
 
 
-def _top_negative_factors(factors: dict[str, int], *, limit: int = 3) -> list[dict[str, Any]]:
-    ranked = sorted(
-        (
-            {"name": name.replace("_", " "), "value": value}
-            for name, value in factors.items()
-            if value < 0
-        ),
-        key=lambda item: item["value"],
-    )
-    return ranked[:limit]
-
-
 def _zone_label(zone: str) -> str:
     return {"residential": "Residential", "commercial": "Commercial", "industrial": "Industrial"}.get(
         zone,
@@ -55,17 +43,11 @@ def _zone_report(
 ) -> dict[str, Any] | None:
     if demand is None:
         return None
-    negatives = _top_negative_factors(factors)
     weak = demand < _WEAK_DEMAND_THRESHOLD or any(
         value <= _STRONG_NEGATIVE_FACTOR for value in factors.values()
     )
     severity = "warn" if weak else "info"
-    detail_parts = [f"{_zone_label(zone)} demand {demand * 100:.0f}% of bar range"]
-    if negatives:
-        detail_parts.append(
-            "top drag: "
-            + ", ".join(f"{item['name']} ({item['value']})" for item in negatives)
-        )
+    detail = f"{_zone_label(zone)} demand {demand * 100:.0f}% of bar range"
     return {
         "zone": zone,
         "label": _zone_label(zone),
@@ -73,8 +55,7 @@ def _zone_report(
         "demand_percent": round(demand * 100, 1),
         "weak": weak,
         "severity": severity,
-        "top_negative_factors": negatives,
-        "detail": " — ".join(detail_parts),
+        "detail": detail,
     }
 
 
