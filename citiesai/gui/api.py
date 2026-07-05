@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -745,3 +745,18 @@ def api_update_install(body: dict[str, Any] | None = None) -> dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
     return {"ok": True, "path": str(installer_path), "quitting": True}
+
+
+_focus_handler: Callable[[], None] | None = None
+
+
+def register_focus_handler(handler: Callable[[], None]) -> None:
+    global _focus_handler
+    _focus_handler = handler
+
+
+def api_focus() -> dict[str, Any]:
+    if _focus_handler is None:
+        return {"ok": False, "error": "App not ready"}
+    _focus_handler()
+    return {"ok": True, "action": "focus"}

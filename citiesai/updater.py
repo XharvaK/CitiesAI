@@ -234,8 +234,11 @@ def _status_message(
     warning: str | None = None,
 ) -> str:
     if latest and not update_available:
-        if compare_versions(current, latest) == 0:
-            return f"No updates available — you're on the latest release (v{latest})."
+        cmp = compare_versions(current, latest)
+        if cmp >= 0:
+            if cmp == 0:
+                return f"No updates available — you're on the latest release (v{latest})."
+            return f"No updates available — you're on v{current}."
         return f"You're on v{current}; latest on GitHub is v{latest}."
     if latest and update_available:
         return f"v{latest} is available on GitHub."

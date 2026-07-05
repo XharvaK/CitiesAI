@@ -150,6 +150,14 @@ def test_check_for_update_api_403_uses_redirect_fallback(monkeypatch: pytest.Mon
     assert "No updates available" in (result.status_message or "")
 
 
+def test_status_message_when_ahead_of_github() -> None:
+    from citiesai.updater import _status_message
+
+    msg = _status_message(current="0.7.0", latest="0.6.2", update_available=False)
+    assert "No updates available" in msg
+    assert "0.6.2" not in msg
+
+
 def test_api_update_check(monkeypatch: pytest.MonkeyPatch) -> None:
     from citiesai.gui.api import api_update_check
 

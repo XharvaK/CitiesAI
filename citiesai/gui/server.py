@@ -34,6 +34,7 @@ from .api import (
     api_export_report,
     api_feedback,
     api_feedback_answer,
+    api_focus,
     api_hud,
     api_insights,
     api_install_mod,
@@ -54,7 +55,9 @@ from .api import (
     api_version,
     api_watch_status,
     api_watch_toggle,
+    register_focus_handler,
 )
+from ..single_instance import ensure_single_instance
 from .auth import TOKEN_HEADER, get_session_token, init_session_token, validate_session_token
 from .tray import SystemTray
 
@@ -308,6 +311,7 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/version": api_version,
             "/api/status": api_status,
             "/api/dashboard": api_dashboard,
+            "/api/focus": api_focus,
             "/api/hud": api_hud,
             "/api/insights": api_insights,
             "/api/briefing": api_briefing,
@@ -472,6 +476,7 @@ def _run_native_window(server: CitiesAIHTTPServer, url: str, *, hud: bool = Fals
         js_api=bridge,
     )
     bridge.attach_main_window(main_window)
+    register_focus_handler(bridge.show_main)
 
     def on_closing() -> bool:
         if bridge._exiting:
@@ -510,16 +515,20 @@ def run_gui(
     if watch:
         get_watch_service().start()
     threading.Thread(target=run_startup_update_check, daemon=True, name="citiesai-update-check").start()
+    url = f"http://{host}:{port}/"
+    if window == "native" and ensure_single_instance(url) == "focused":
+        return 0
     try:
         server = CitiesAIHTTPServer((host, port), CitiesAIHandler)
         server.session_token = init_session_token()
     except OSError as exc:
+        if window == "native" and ensure_single_instance(url) == "focused":
+            return 0
         print(
             f"Could not start CitiesAI on {host}:{port} ({exc}). "
             f"Close other CitiesAI instances or try: citiesai gui --port {(port + 1)}"
         )
         return 1
-    url = f"http://{host}:{port}/"
 
     if window == "none":
         print(f"CitiesAI v{__version__} listening at {url} (no window)")

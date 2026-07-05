@@ -38,6 +38,8 @@ All notable changes to CitiesAI are documented here.
 - **Compact HUD v2** — frameless always-on-top strip from Settings; treasury + population ±/hr, grade badge, top priority alert.
 - **System tray** — tray icon on launch; closing the window (X) minimizes to tray; right-click **Open**, **Compact HUD**, or **Exit** (full quit).
 - **Insights** — removed redundant Budget & treasury card (treasury/net already on Dashboard; economy grade on report card).
+- **Single instance** — second launch focuses the existing window instead of opening another tray icon.
+- **Updater** — when you're on a newer build than GitHub's latest tag, status no longer claims an older release is "latest".
 
 ### Mod (CS2 Data Export)
 
