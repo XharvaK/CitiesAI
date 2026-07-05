@@ -8,8 +8,11 @@ No Cursor, no cloud account for CitiesAI itself, and no changes to your save —
 
 | Feature | Needs AI key? |
 |---------|----------------|
-| Dashboard (population, budget, transit, signals) | No |
-| Issues & setup checks | No |
+| **Dashboard** — live metrics, session digest, report-card strip | No |
+| **Insights** — letter grades, RCI demand, utilities, transit doctor | No |
+| **Issues** — setup checks + city pressures; click a row for **Ask** or **Settings** | No |
+| **Push notifications** — Windows toasts for new/changed issues (Issues tab toggle) | No |
+| **Auto-updater** — check GitHub Releases from Settings | No |
 | Wiki + encyclopedia search | No |
 | **Ask** — grounded advice about *your* city | Yes (Mistral, free tier works) |
 
@@ -21,13 +24,13 @@ Your Mistral API key   →  optional LLM  →  synthesized reply
 
 Export refreshes about every **5 seconds** while a city is loaded in-game (requires the bundled export mod). When CS2 is closed, the last snapshot stays on disk; the dashboard shows **Stale** after ~15 seconds without a new export — that is normal, not a setup error.
 
-The **Issues** tab lists setup problems and **current city pressures** (water, health, jobs, transit, budget, and more) with one-click **Ask about this** prompts.
+The **Issues** tab lists setup problems and **current city pressures** (water, health, jobs, transit, budget, and more). Click a row to open **Ask** with a tailored prompt (city pressures) or **Settings** (setup issues). Enable **Push notifications** on that tab for Windows toasts when issues change (`citiesai gui --watch` enables the same background alerts).
 
 ## What you need
 
 | Requirement | Notes |
 |-------------|--------|
-| **Windows 10/11** | v0.5.2 ships as a desktop app (WebView2; usually preinstalled on Win 11) |
+| **Windows 10/11** | Desktop app (WebView2; usually preinstalled on Win 11) — current release **0.6.2** |
 | **Cities: Skylines II** | Steam or Xbox PC (Game Pass) |
 | **CS2 Data Export mod** | Bundled in the Windows installer, or install manually — see [docs/INSTALL-MOD.md](docs/INSTALL-MOD.md) |
 | **Mistral API key** | Optional; free Experiment tier is enough for testing |
@@ -36,7 +39,9 @@ The **Issues** tab lists setup problems and **current city pressures** (water, h
 
 ## Install (Windows — recommended)
 
-1. Download **`CitiesAI-Setup-0.5.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+See [CHANGELOG.md](CHANGELOG.md) for 0.6.2 release notes.
+
+1. Download **`CitiesAI-Setup-0.6.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
 2. Run the installer (per-user, no admin). SmartScreen may warn on unsigned builds — use **More info → Run anyway** if you trust the source.
 3. Launch **CitiesAI** from the Start menu.
 4. Follow the onboarding wizard:
@@ -76,9 +81,13 @@ Mod from source: [docs/INSTALL-MOD.md](docs/INSTALL-MOD.md)
 
 1. Launch **CitiesAI** (or leave it open).
 2. Play CS2 with **CS2 Data Export** enabled and your city loaded.
-3. Check the **Dashboard** for live metrics and the Fresh/Stale pill.
-4. Open **Ask** and type a question (e.g. *"Why is my budget negative?"*).
-5. Use **Feedback** to report bugs or bad answers.
+3. Check the **Dashboard** for live metrics, the Fresh/Stale pill, and the session digest banner.
+4. Open **Insights** for report-card grades, RCI demand, utilities, and transit analysis.
+5. Open **Issues** when something looks wrong — click a row to jump into **Ask** or **Settings**.
+6. Open **Ask** and type a question (e.g. *"Why is my budget negative?"*).
+7. Use **Feedback** to report bugs or bad answers.
+
+Settings → **Updates** checks GitHub for new installers on startup (Windows packaged builds).
 
 PowerShell helper (repo):
 
@@ -115,7 +124,8 @@ If you lose the key, delete the old one in the console and create a new key.
 1. Open CitiesAI → **Settings**.
 2. Under **AI answers**, paste the key into **API key**.
 3. Click **Save key**, then **Test key**. You should see a success message.
-4. Open **Ask** and try a short question.
+4. After save, the key is hidden — use **Replace key** or **Remove key** to change it later.
+5. Open **Ask** and try a short question.
 
 The key is stored locally in:
 
@@ -159,7 +169,7 @@ Free-tier rate limits apply on Mistral’s side. If Ask fails, check **Settings 
 | Command | Purpose |
 |---------|---------|
 | `citiesai gui` | Desktop app: **Dashboard**, **Insights**, **Issues**, **Ask**, **Settings**, **Feedback** |
-| `citiesai gui --watch` | GUI + desktop notification alerts for city pressures |
+| `citiesai gui --watch` | GUI + Windows push notifications for city pressures (same as Issues tab toggle) |
 | `citiesai setup` | Detect game paths and write config |
 | `citiesai doctor` | Verify snapshot, wiki, encyclopedia, API key |
 | `citiesai context` | Compact city brief from `latest.json` |

@@ -5,7 +5,7 @@ Run after playing a city for 30+ minutes with varied systems (zoning, services, 
 ## Stranger flow (installer beta)
 
 - [ ] Fresh Windows user profile or renamed `%APPDATA%\CitiesAI`
-- [ ] Run `CitiesAI-Setup-0.2.0.exe` (or `uv run citiesai gui` from source)
+- [ ] Run `CitiesAI-Setup-0.6.2.exe` (or `uv run citiesai gui` from source)
 - [ ] Onboarding: detect game → install mod → load city → optional Mistral key
 - [ ] Dashboard shows metrics without reading file paths
 - [ ] Ask returns streaming answer (or bundle with AI off)
@@ -16,13 +16,15 @@ Run after playing a city for 30+ minutes with varied systems (zoning, services, 
 - [ ] `citiesai doctor` passes (export fresh, encyclopedia available)
 - [ ] Export age under 30 seconds during test session
 
-## GUI (v0.1)
+## GUI (0.6.x)
 
-- [ ] `citiesai gui` opens at http://127.0.0.1:8765
-- [ ] Dashboard hero + metric cards + freshness pill
-- [ ] Health strip in sidebar reflects issues
-- [ ] Ask chat streams tokens with LLM key
-- [ ] Settings: save paths, install mod, save/test API key
+- [ ] `citiesai gui` opens a desktop window (pywebview; no browser step)
+- [ ] Tabs present: Dashboard, Insights, Issues, Ask, Settings, Feedback
+- [ ] Dashboard: metric cards, Fresh/Stale pill, report-card strip → Insights, session digest banner
+- [ ] Insights: report card, RCI demand, utilities & services, transit doctor (no Anomalies card)
+- [ ] Issues: feed rows open Ask or Settings; push-notifications toggle works
+- [ ] Ask: chat streams with LLM key; thumbs up/down on answers
+- [ ] Settings: save paths, install/reinstall mod, save/test/replace/remove API key, Updates + mod row at bottom
 - [ ] Feedback tab sends report
 
 ## CLI questions (with `--no-llm` first)

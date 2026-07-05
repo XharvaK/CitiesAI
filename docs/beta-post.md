@@ -6,7 +6,7 @@
 >
 > Hey mayors! I built a small Windows companion for Cities: Skylines II and need a handful of beta testers.
 >
-> **What it does:** reads a live snapshot of your city (population, budget, services, traffic) via a lightweight export mod, shows a clean dashboard, and answers questions like *"why is my budget bleeding?"* grounded in *your* numbers + wiki knowledge. Read-only. Never touches your save.
+> **What it does:** reads a live snapshot of your city (population, budget, services, traffic) via a lightweight export mod, shows a dashboard + **Insights** report card, tracks **Issues** across sessions, and answers questions like *"why is my budget bleeding?"* grounded in *your* numbers + wiki knowledge. Read-only. Never touches your save.
 >
 > **What you need:** Windows + CS2 (Steam or Game Pass). One installer, no modding experience. AI answers are optional (free Mistral key, guided in-app; stats work without it).
 >
@@ -24,10 +24,13 @@ I'm looking for beta testers for **CitiesAI**, a free desktop companion I built 
 
 **What it does**
 
-- Installs a small **read-only** export mod that writes city metrics to a JSON snapshot every ~10s while you play
-- Local dashboard: population, treasury, wellbeing, traffic, and **Issues** for live city pressures (water, health, jobs, transit)
+- Installs a small **read-only** export mod that writes city metrics to a JSON snapshot every ~5s while you play
+- **Dashboard** with live metrics, session digest, and report-card strip
+- **Insights** — letter grades, RCI demand, utilities, transit doctor
+- **Issues** — setup checks and city pressures; click a row to jump into Ask or Settings; optional Windows push notifications
 - **Ask** tab: questions grounded in your numbers + CS2 wiki / in-game encyclopedia
 - Optional AI answers via your own free Mistral API key (stats work without it)
+- In-app updater checks GitHub Releases (Settings → Updates)
 
 **What you need**
 
@@ -50,9 +53,9 @@ If you're interested, comment or DM and I'll send the installer + short setup gu
 
 Thanks for volunteering! Here's the beta pack:
 
-1. Download: `[link to CitiesAI-Setup-0.2.0.exe]`
-2. Read: `docs/BETA.md` in the repo (or paste key points)
-3. After install: complete onboarding (or Skip setup) → load a city → try Dashboard + Ask
+1. Download the latest **`CitiesAI-Setup-*.exe`** from [GitHub Releases](https://github.com/XharvaK/CitiesAI/releases) (currently **0.6.2**)
+2. Read: [docs/BETA.md](https://github.com/XharvaK/CitiesAI/blob/master/docs/BETA.md) in the repo (or paste key points)
+3. After install: complete onboarding (or Skip setup) → load a city → try Dashboard, Insights, Issues, and Ask
 4. Report issues via in-app **Feedback** (or ping me on Discord)
 
 SmartScreen may warn. Use "More info" then "Run anyway". Close CS2 before mod install if it fails.
