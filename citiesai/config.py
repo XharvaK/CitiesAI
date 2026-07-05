@@ -44,6 +44,9 @@ class CitiesAIConfig:
     llm_max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS
     llm_agentic_enabled: bool = True
     onboarding_complete: bool = False
+    check_updates_on_startup: bool = True
+    update_last_check_utc: str | None = None
+    update_dismissed_version: str | None = None
 
     def resolved_export_path(self) -> Path:
         if self.export_path:
@@ -119,6 +122,13 @@ class CitiesAIConfig:
         lines.append("[app]")
         lines.append(f"onboarding_complete = {'true' if self.onboarding_complete else 'false'}")
         lines.append("")
+        lines.append("[updates]")
+        lines.append(f"check_on_startup = {'true' if self.check_updates_on_startup else 'false'}")
+        if self.update_last_check_utc:
+            lines.append(f'last_check_utc = "{_escape_toml(self.update_last_check_utc)}"')
+        if self.update_dismissed_version:
+            lines.append(f'dismissed_version = "{_escape_toml(self.update_dismissed_version)}"')
+        lines.append("")
         path.write_text("\n".join(lines), encoding="utf-8")
         return path
 
@@ -144,6 +154,7 @@ def load_config() -> CitiesAIConfig:
     paths = data.get("paths", {})
     llm = data.get("llm", {})
     app = data.get("app", {})
+    updates = data.get("updates", {})
 
     if paths.get("game_dir"):
         cfg.game_dir = Path(str(paths["game_dir"]))
@@ -174,6 +185,13 @@ def load_config() -> CitiesAIConfig:
 
     if "onboarding_complete" in app:
         cfg.onboarding_complete = bool(app["onboarding_complete"])
+
+    if "check_on_startup" in updates:
+        cfg.check_updates_on_startup = bool(updates["check_on_startup"])
+    if updates.get("last_check_utc"):
+        cfg.update_last_check_utc = str(updates["last_check_utc"])
+    if updates.get("dismissed_version"):
+        cfg.update_dismissed_version = str(updates["dismissed_version"])
 
     return cfg
 

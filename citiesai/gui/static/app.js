@@ -59,6 +59,8 @@ let lastDashboardData = null;
 let metricModalReturnFocus = null;
 let diagnosticsModalReturnFocus = null;
 let lastActiveCity = null;
+let lastUpdateInfo = null;
+let updateCheckInFlight = false;
 
 function $(id) {
   return document.getElementById(id);
@@ -506,6 +508,7 @@ function switchView(name, options = {}) {
   }
   if (name === "settings") {
     void loadSettings();
+    void refreshUpdateUi({ force: false });
   }
   if (name === "insights") {
     void loadInsights();
@@ -1764,6 +1767,7 @@ function formatGameMinutes(minutes) {
   return rem > 0 ? `${hours}h ${rem}m` : `${hours}h`;
 }
 
+function formatTransitModes(modes) {
   if (!modes || typeof modes !== "object") return "";
   return Object.entries(modes)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
@@ -1914,6 +1918,156 @@ function updateKeyHint(provider) {
   }
 }
 
+function renderUpdateBanner(info) {
+  const banner = $("update-banner");
+  if (!banner) return;
+  if (!info?.update_available) {
+    banner.hidden = true;
+    banner.innerHTML = "";
+    return;
+  }
+  const version = escapeHtml(info.latest_version || "");
+  const installLabel = info.can_install ? "Download & install" : "Open release page";
+  banner.hidden = false;
+  banner.innerHTML = `
+    <div class="update-banner-copy">
+      <p class="update-banner-title">Update available: v${version}</p>
+      <p class="muted small">A newer CitiesAI installer is on GitHub.</p>
+    </div>
+    <div class="update-banner-actions">
+      <button type="button" class="btn primary btn-sm" id="update-banner-install">${installLabel}</button>
+      <button type="button" class="btn ghost btn-sm" id="update-banner-dismiss">Not now</button>
+    </div>
+  `;
+  $("update-banner-install")?.addEventListener("click", () => {
+    if (info.can_install) {
+      void runUpdateInstall();
+    } else if (info.release_url) {
+      window.open(info.release_url, "_blank", "noopener");
+    }
+  });
+  $("update-banner-dismiss")?.addEventListener("click", () => {
+    void dismissUpdate(info.latest_version);
+  });
+}
+
+function renderUpdateSettings(info) {
+  const current = $("update-current-version");
+  const status = $("update-status");
+  const installBtn = $("update-download-install");
+  const releaseLink = $("update-release-notes");
+  const startupToggle = $("update-check-startup");
+  if (!current || !status || !installBtn || !releaseLink || !startupToggle) return;
+
+  current.textContent = info?.current_version ? `v${info.current_version}` : "…";
+  startupToggle.checked = info?.check_on_startup !== false;
+  if (info?.release_url) {
+    releaseLink.href = info.release_url;
+  }
+
+  if (!info) {
+    status.textContent = "Checking for updates…";
+    installBtn.hidden = true;
+    return;
+  }
+  if (info.error) {
+    status.textContent = info.error;
+    installBtn.hidden = true;
+    return;
+  }
+  if (info.update_available) {
+    status.textContent = `v${info.latest_version} is available on GitHub.`;
+    installBtn.hidden = false;
+    installBtn.textContent = info.can_install ? "Download & install" : "Open release page";
+    installBtn.dataset.mode = info.can_install ? "install" : "open";
+  } else if (info.latest_version) {
+    status.textContent = `You're on the latest release (v${info.latest_version}).`;
+    installBtn.hidden = true;
+  } else {
+    status.textContent = "Up to date.";
+    installBtn.hidden = true;
+  }
+}
+
+async function refreshUpdateUi({ force = false } = {}) {
+  if (updateCheckInFlight) return lastUpdateInfo;
+  updateCheckInFlight = true;
+  try {
+    const query = force ? "?force=1" : "";
+    const info = await fetchJson(`/api/update/check${query}`);
+    lastUpdateInfo = info;
+    renderUpdateBanner(info);
+    if ($("view-settings")?.classList.contains("active")) {
+      renderUpdateSettings(info);
+    }
+    return info;
+  } catch (err) {
+    const fallback = {
+      current_version: lastUpdateInfo?.current_version,
+      check_on_startup: lastUpdateInfo?.check_on_startup !== false,
+      error: String(err.message || err),
+    };
+    renderUpdateSettings(fallback);
+    return null;
+  } finally {
+    updateCheckInFlight = false;
+  }
+}
+
+async function dismissUpdate(version) {
+  if (!version) return;
+  try {
+    await fetchJson("/api/update/dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version }),
+    });
+    await refreshUpdateUi({ force: true });
+  } catch (err) {
+    toast(String(err.message || err), "err");
+  }
+}
+
+async function runUpdateInstall() {
+  const info = lastUpdateInfo;
+  if (!info?.update_available) {
+    toast("No update available", "err");
+    return;
+  }
+  if (!info.can_install) {
+    if (info.release_url) window.open(info.release_url, "_blank", "noopener");
+    return;
+  }
+  const installBtn = $("update-download-install");
+  const bannerBtn = $("update-banner-install");
+  [installBtn, bannerBtn].forEach((btn) => {
+    if (btn) btn.disabled = true;
+  });
+  try {
+    toast("Downloading update…", "ok");
+    const downloaded = await fetchJson("/api/update/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: false }),
+    });
+    const installed = await fetchJson("/api/update/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: downloaded.path }),
+    });
+    if (installed.quitting) {
+      toast("Installing update… CitiesAI will restart.", "ok");
+      setTimeout(() => window.close(), 1200);
+    }
+  } catch (err) {
+    toast(String(err.message || err), "err");
+  } finally {
+    [installBtn, bannerBtn].forEach((btn) => {
+      if (btn) btn.disabled = false;
+    });
+  }
+}
+
 async function loadSettings() {
   try {
     const data = await fetchJson("/api/setup");
@@ -1953,6 +2107,9 @@ async function loadSettings() {
     } else {
       keyLine.textContent = "No API key saved";
       keyLine.className = "key-status-pill muted";
+    }
+    if (lastUpdateInfo) {
+      renderUpdateSettings(lastUpdateInfo);
     }
   } catch (err) {
     toast(String(err.message || err), "err");
@@ -2188,6 +2345,36 @@ $("save-setup").addEventListener("click", async () => {
 
 $("redetect-paths").addEventListener("click", loadSettings);
 
+$("update-check-now")?.addEventListener("click", () => {
+  void refreshUpdateUi({ force: true });
+});
+
+$("update-download-install")?.addEventListener("click", () => {
+  const btn = $("update-download-install");
+  if (btn?.dataset.mode === "open" && lastUpdateInfo?.release_url) {
+    window.open(lastUpdateInfo.release_url, "_blank", "noopener");
+    return;
+  }
+  void runUpdateInstall();
+});
+
+$("update-check-startup")?.addEventListener("change", async (e) => {
+  try {
+    await fetchJson("/api/update/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ check_on_startup: e.target.checked }),
+    });
+    if (lastUpdateInfo) {
+      lastUpdateInfo.check_on_startup = e.target.checked;
+    }
+    toast(e.target.checked ? "Startup update checks enabled" : "Startup update checks disabled", "ok");
+  } catch (err) {
+    e.target.checked = !e.target.checked;
+    toast(String(err.message || err), "err");
+  }
+});
+
 $("install-mod").addEventListener("click", async () => {
   try {
     const data = await fetchJson("/api/install-mod", { method: "POST", body: "{}" });
@@ -2348,6 +2535,7 @@ async function init() {
   updateAskHelper();
   setFeedbackCategory($("feedback-category").value);
   await loadStatus({ promptOnboarding: true });
+  void refreshUpdateUi({ force: false });
   await loadDashboard();
   void initWatchToggle();
   dashboardTimer = setInterval(async () => {

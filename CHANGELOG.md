@@ -7,6 +7,10 @@ All notable changes to CitiesAI are documented here.
 ### Fixes
 
 - **Transit round trip** — export mod corrected tick→in-game-minute conversion (~60× inflation inherited from XTM UI helper); Insights table shows `8h 25m` style labels for long trips.
+- **Auto-updater** — GitHub Releases check on startup; Settings → Updates card with download & silent install (Windows packaged builds).
+- **Dashboard** — hide empty update banner (was showing as a green bar above Mayor's briefing when no update available).
+- **Settings** — AI answers card layout aligned and grouped (provider/model row, panel sections, status pill in header).
+- **GUI startup** — fix broken `app.js` parse error that left the dashboard stuck on “Checking…”.
 
 ### Install
 

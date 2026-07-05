@@ -1206,11 +1206,16 @@ select.control.select-control {
   .settings-ai {
     grid-column: 1 / -1;
   }
+
+  .settings-updates {
+    grid-column: 1 / -1;
+  }
 }
 
 .settings-paths,
 .settings-mod,
-.settings-ai {
+.settings-ai,
+.settings-updates {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -1244,29 +1249,70 @@ select.control.select-control {
   color: var(--muted);
 }
 
-.settings-ai .form-stack {
+.settings-ai-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-ai-header .key-status-pill {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+.settings-ai-body {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+  margin-top: 0.35rem;
+}
+
+.settings-ai-row {
+  display: grid;
   gap: 0.85rem;
 }
 
-@media (max-width: 700px) {
-  .settings-ai .form-stack {
-    grid-template-columns: 1fr;
-  }
+.settings-ai-row-2 {
+  grid-template-columns: 1fr 1fr;
 }
 
-.settings-ai .card-actions {
-  padding-top: 0.5rem;
+.settings-ai-panel {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+}
+
+.settings-ai-hint {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.settings-ai-key-block .field {
+  margin: 0;
+}
+
+.settings-ai-actions {
+  padding-top: 0.85rem;
   border-top: 1px solid var(--border-soft);
   margin-top: 0.85rem;
 }
 
-.key-status-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.65rem;
+@media (max-width: 700px) {
+  .settings-ai-row-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-ai-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-ai-header .key-status-pill {
+    align-self: flex-start;
+  }
 }
 
 .key-status-pill {
@@ -1283,7 +1329,7 @@ select.control.select-control {
 }
 
 .settings-mod .card-actions,
-.settings-ai .card-actions {
+.settings-ai .settings-ai-actions {
   margin-top: auto;
 }
 
@@ -1769,6 +1815,59 @@ select.control.select-control {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 0.92rem;
+}
+
+.update-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(143, 170, 122, 0.12);
+  border: 1px solid rgba(143, 170, 122, 0.35);
+  border-radius: var(--radius-sm);
+}
+
+.update-banner[hidden],
+.digest-banner[hidden],
+.report-card-strip[hidden],
+.forecast-alerts[hidden] {
+  display: none !important;
+}
+
+.update-banner-copy {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.update-banner-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.update-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.update-settings-body {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.update-version-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.update-actions {
+  flex-wrap: wrap;
 }
 
 .report-card-strip {

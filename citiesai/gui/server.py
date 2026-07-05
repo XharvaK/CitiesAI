@@ -23,6 +23,7 @@ from ..dashboard import extract_headline_metrics
 from ..env_store import load_env_file
 from ..historian import get_historian
 from ..snapshot import load_snapshot_safe, snapshot_meta
+from ..updater import run_startup_update_check
 from ..version import __version__
 from ..watch import get_watch_service
 from .api import (
@@ -46,6 +47,11 @@ from .api import (
     api_status,
     api_suggestions,
     api_test_key,
+    api_update_check,
+    api_update_dismiss,
+    api_update_download,
+    api_update_install,
+    api_update_settings,
     api_version,
     api_watch_status,
     api_watch_toggle,
@@ -176,6 +182,9 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/settings/key/test": api_test_key,
             "/api/settings/llm-presets": api_llm_presets,
             "/api/watch": api_watch_status,
+            "/api/update/check": lambda: api_update_check(
+                force=parse_qs(parsed.query).get("force", ["0"])[0] in {"1", "true", "yes"}
+            ),
         }
         handler = handlers.get(route)
         if handler is None:
@@ -240,6 +249,10 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/watch": api_watch_toggle,
             "/api/chat/clear": api_clear_chat,
             "/api/report/export": api_export_report,
+            "/api/update/settings": api_update_settings,
+            "/api/update/dismiss": api_update_dismiss,
+            "/api/update/download": api_update_download,
+            "/api/update/install": api_update_install,
         }
         handler = post_handlers.get(route)
         if handler is None:
@@ -340,6 +353,7 @@ def run_gui(
     apply_config_to_env(load_config())
     if watch:
         get_watch_service().start()
+    threading.Thread(target=run_startup_update_check, daemon=True, name="citiesai-update-check").start()
     try:
         server = CitiesAIHTTPServer((host, port), CitiesAIHandler)
     except OSError as exc:

@@ -127,6 +127,8 @@
 
         </header>
 
+        <div id="update-banner" class="update-banner" hidden></div>
+
         <div id="mayors-briefing" class="digest-banner briefing-banner" hidden></div>
 
         <div id="session-digest" class="digest-banner" hidden></div>
@@ -285,33 +287,69 @@
           </article>
 
           <article class="card settings-ai">
-            <div class="card-header">
-              <h2>AI answers</h2>
-              <p class="muted small">Optional. Free tier at <a href="https://console.mistral.ai" target="_blank" rel="noopener">console.mistral.ai</a>. Key stays on your PC.</p>
+            <div class="card-header settings-ai-header">
+              <div>
+                <h2>AI answers</h2>
+                <p class="muted small">Optional. Free tier at <a href="https://console.mistral.ai" target="_blank" rel="noopener">console.mistral.ai</a>. Key stays on your PC.</p>
+              </div>
+              <span id="key-status" class="key-status-pill muted">No API key saved</span>
             </div>
-            <div class="form-stack">
-              <label class="field"><span class="field-label">Provider</span>
-                <select id="setup-provider" class="control select-control">
-                  <option value="mistral">Mistral Cloud</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="local">Local (Ollama / LM Studio)</option>
-                </select>
-              </label>
-              <label class="field"><span class="field-label">Model</span><input id="setup-model" class="control" placeholder="mistral-medium-latest" /></label>
-              <label class="checkbox">
-                <input id="setup-agentic" type="checkbox" checked />
-                Deep research (tool calling)
-              </label>
-              <p class="muted small">When off, Ask uses one API call with pre-fetched sources — faster on free tiers.</p>
-              <label class="field"><span class="field-label">API key</span><input id="api-key" class="control" type="password" placeholder="Paste API key" autocomplete="off" /></label>
-              <p id="key-hint" class="muted small">Required for Mistral/OpenAI. Local Ollama can use any placeholder.</p>
+            <div class="settings-ai-body">
+              <div class="settings-ai-row settings-ai-row-2">
+                <label class="field">
+                  <span class="field-label">Provider</span>
+                  <select id="setup-provider" class="control select-control">
+                    <option value="mistral">Mistral Cloud</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="local">Local (Ollama / LM Studio)</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">Model</span>
+                  <input id="setup-model" class="control" placeholder="mistral-medium-latest" />
+                </label>
+              </div>
+              <div class="settings-ai-panel">
+                <label class="checkbox">
+                  <input id="setup-agentic" type="checkbox" checked />
+                  Deep research (tool calling)
+                </label>
+                <p class="muted small settings-ai-hint">When off, Ask uses one API call with pre-fetched sources — faster on free tiers.</p>
+              </div>
+              <div class="settings-ai-panel settings-ai-key-block">
+                <label class="field">
+                  <span class="field-label">API key</span>
+                  <input id="api-key" class="control" type="password" placeholder="Paste API key" autocomplete="off" />
+                </label>
+                <p id="key-hint" class="muted small settings-ai-hint">Required for Mistral/OpenAI. Local Ollama can use any placeholder.</p>
+              </div>
             </div>
-            <div class="card-actions">
+            <div class="card-actions settings-ai-actions">
               <button type="button" id="test-key" class="btn secondary">Test key</button>
               <button type="button" id="save-key" class="btn primary">Save key</button>
             </div>
-            <div class="key-status-row">
-              <span id="key-status" class="key-status-pill muted">No API key saved</span>
+          </article>
+
+          <article class="card settings-updates">
+            <div class="card-header">
+              <h2>Updates</h2>
+              <p class="muted small">Check GitHub Releases for new CitiesAI installers.</p>
+            </div>
+            <div class="update-settings-body">
+              <p class="update-version-line">
+                <span class="field-label">Current version</span>
+                <strong id="update-current-version">…</strong>
+              </p>
+              <p id="update-status" class="muted small">Checking for updates…</p>
+              <label class="checkbox">
+                <input id="update-check-startup" type="checkbox" checked />
+                Check for updates on startup
+              </label>
+            </div>
+            <div class="card-actions update-actions">
+              <button type="button" id="update-check-now" class="btn secondary">Check for updates</button>
+              <button type="button" id="update-download-install" class="btn primary" hidden>Download &amp; install</button>
+              <a id="update-release-notes" class="btn ghost" href="https://github.com/XharvaK/CitiesAI/releases" target="_blank" rel="noopener">Release notes</a>
             </div>
           </article>
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,14 @@ from ..snapshot import load_snapshot_safe, snapshot_meta
 from ..status import collect_status_report
 from ..suggestions import build_ask_suggestions
 from ..summary import build_city_brief
+from ..updater import (
+    check_for_update,
+    clear_update_cache,
+    dismiss_update,
+    download_installer,
+    launch_installer,
+    save_update_settings,
+)
 from ..version import __version__
 from ..watch import get_watch_service
 
@@ -543,3 +552,80 @@ def api_export_report(body: dict[str, Any] | None = None) -> dict[str, Any]:
 
 def api_llm_presets() -> dict[str, Any]:
     return {"ok": True, "presets": LLM_PRESETS}
+
+
+def api_update_check(*, force: bool = False) -> dict[str, Any]:
+    result = check_for_update(force=force)
+    payload = result.to_dict()
+    payload["ok"] = result.ok
+    return payload
+
+
+def api_update_settings(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = body or {}
+    check_on_startup = body.get("check_on_startup")
+    if check_on_startup is None:
+        return {"ok": False, "error": "check_on_startup is required"}
+    path = save_update_settings(check_on_startup=bool(check_on_startup))
+    return {"ok": True, "config_path": str(path), "check_on_startup": bool(check_on_startup)}
+
+
+def api_update_dismiss(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = body or {}
+    version = str(body.get("version", "")).strip()
+    if not version:
+        return {"ok": False, "error": "version is required"}
+    path = dismiss_update(version)
+    clear_update_cache()
+    return {"ok": True, "config_path": str(path), "dismissed_version": version}
+
+
+def api_update_download(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = body or {}
+    check = check_for_update(force=bool(body.get("force")))
+    if not check.ok:
+        return {"ok": False, "error": check.error or "Update check failed"}
+    if not check.update_available:
+        return {"ok": False, "error": "No update available"}
+    if not check.download_url or not check.installer_name:
+        return {"ok": False, "error": "Release has no Windows installer asset"}
+
+    try:
+        path = download_installer(
+            download_url=check.download_url,
+            installer_name=check.installer_name,
+            expected_size=check.installer_size,
+        )
+    except (OSError, urllib.error.URLError, RuntimeError, ValueError) as exc:
+        return {"ok": False, "error": str(exc)}
+
+    return {
+        "ok": True,
+        "path": str(path),
+        "latest_version": check.latest_version,
+        "installer_name": check.installer_name,
+    }
+
+
+def api_update_install(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = body or {}
+    raw_path = str(body.get("path", "")).strip()
+    if raw_path:
+        installer_path = Path(raw_path).expanduser().resolve()
+        updates_root = (config_dir() / "updates").resolve()
+        try:
+            installer_path.relative_to(updates_root)
+        except ValueError:
+            return {"ok": False, "error": f"Installer must be under {updates_root}"}
+    else:
+        check = check_for_update(force=False)
+        if not check.installer_name:
+            return {"ok": False, "error": "No installer downloaded yet"}
+        installer_path = (config_dir() / "updates" / check.installer_name).resolve()
+
+    try:
+        launch_installer(installer_path)
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    return {"ok": True, "path": str(installer_path), "quitting": True}
