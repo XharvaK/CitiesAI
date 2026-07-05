@@ -122,7 +122,7 @@ def snapshot_signals(snapshot: dict) -> list[str]:
     if has_citizens and traffic_volume and not lines_total:
         terms.extend(["public transportation", "bus", "subway", "transit", "passengers"])
 
-    unemployed = pick(workforce, "UnemployedWorkers", "unemployed_workers") or 0
+    unemployed = pick(workforce, "Unemployed", "unemployed", "UnemployedWorkers", "unemployed_workers") or 0
     if unemployed:
         terms.extend(["unemployment", "jobs", "zoning", "industrial", "office", "commercial"])
 
@@ -176,3 +176,32 @@ def build_search_queries(snapshot: dict, question: str | None = None, *, max_que
 
     deduped = _unique(queries)
     return deduped[:max_queries]
+
+
+CHANGE_QUESTION_TERMS = {
+    "change",
+    "changed",
+    "decline",
+    "declined",
+    "decrease",
+    "decreased",
+    "drop",
+    "dropped",
+    "fall",
+    "falling",
+    "fell",
+    "history",
+    "increase",
+    "increased",
+    "lower",
+    "recent",
+    "rose",
+    "spike",
+    "spiked",
+    "worse",
+}
+
+
+def is_change_question(question: str) -> bool:
+    tokens = set(_tokenize(question))
+    return bool(tokens & CHANGE_QUESTION_TERMS)

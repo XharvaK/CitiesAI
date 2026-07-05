@@ -56,6 +56,7 @@ If in-game `Options → Modding` hangs installing Unity to `Program Files`:
 |---------|-----|
 | `No LLM API key` | Set `MISTRAL_API_KEY` or use `--no-llm` |
 | Rate limit | Mistral free tier is low RPS; wait and retry |
+| `Agentic loop exceeded maximum tool rounds` | Complex Ask questions can exhaust tool rounds. CitiesAI should auto-fallback; if you still see this, disable **Deep research** in Settings or run `citiesai ask "..." --no-agentic` |
 | Wrong model | Set `CITIESAI_LLM_MODEL` or edit config `[llm] model` |
 
 Other providers: set `CITIESAI_LLM_BASE_URL` and `CITIESAI_LLM_API_KEY_ENV`.

@@ -1414,6 +1414,12 @@ async function askStream(question) {
         finishStream();
       }
       if (event === "done") {
+        if (payload.fallback_used && answerEl && answer.trim()) {
+          answerEl.insertAdjacentHTML(
+            "beforeend",
+            `<p class="muted small ask-fallback-note">Answered after the research limit — retry or disable Deep research for a faster single-call answer.</p>`
+          );
+        }
         if (!answer.trim()) {
           streamFailed = true;
           if (answerEl) {
@@ -1430,7 +1436,11 @@ async function askStream(question) {
     const response = await fetch("/api/ask/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, use_llm: true }),
+      body: JSON.stringify({
+        question,
+        use_llm: true,
+        agentic: $("setup-agentic")?.checked !== false,
+      }),
       signal: askFetchSignal(),
     });
     if (!response.ok) {
@@ -1642,6 +1652,10 @@ async function loadSettings() {
     setPathTitle($("setup-locale"), data.locale_cok);
     setPathTitle($("setup-export"), data.export_path);
     $("setup-model").value = data.llm_model || "mistral-medium-latest";
+    const agenticToggle = $("setup-agentic");
+    if (agenticToggle) {
+      agenticToggle.checked = data.llm_agentic_enabled !== false;
+    }
     try {
       const presets = await fetchJson("/api/settings/llm-presets");
       const providerSelect = $("setup-provider");
@@ -1874,6 +1888,7 @@ $("save-setup").addEventListener("click", async () => {
         export_path: $("setup-export").value.trim(),
         llm_model: $("setup-model").value.trim(),
         llm_provider: $("setup-provider")?.value || "mistral",
+        llm_agentic_enabled: $("setup-agentic")?.checked !== false,
       }),
     });
     toast(`Saved ${data.config_path}`, "ok");

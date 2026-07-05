@@ -27,7 +27,7 @@ The **Issues** tab lists setup problems and **current city pressures** (water, h
 
 | Requirement | Notes |
 |-------------|--------|
-| **Windows 10/11** | v0.5.1 ships as a desktop app (WebView2; usually preinstalled on Win 11) |
+| **Windows 10/11** | v0.5.2 ships as a desktop app (WebView2; usually preinstalled on Win 11) |
 | **Cities: Skylines II** | Steam or Xbox PC (Game Pass) |
 | **CS2 Data Export mod** | Bundled in the Windows installer, or install manually — see [docs/INSTALL-MOD.md](docs/INSTALL-MOD.md) |
 | **Mistral API key** | Optional; free Experiment tier is enough for testing |
@@ -36,7 +36,7 @@ The **Issues** tab lists setup problems and **current city pressures** (water, h
 
 ## Install (Windows — recommended)
 
-1. Download **`CitiesAI-Setup-0.5.1.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+1. Download **`CitiesAI-Setup-0.5.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
 2. Run the installer (per-user, no admin). SmartScreen may warn on unsigned builds — use **More info → Run anyway** if you trust the source.
 3. Launch **CitiesAI** from the Start menu.
 4. Follow the onboarding wizard:

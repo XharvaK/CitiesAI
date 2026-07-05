@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from ..analyzers import analyze_budget, analyze_housing_labor, analyze_transit_lines
-from ..ask_core import build_ask_bundle, collect_sources_for_queries, meta_to_dict, run_ask
+from ..ask_core import (
+    build_ask_bundle,
+    collect_sources_for_queries,
+    meta_to_dict,
+    prepare_agentic_ask,
+    run_ask,
+)
 from ..city_issues import detect_city_issues
 from ..city_name import resolve_city_display_name
 from ..config import config_dir, config_path, load_config, merge_discovered, set_onboarding_complete
@@ -212,12 +218,21 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
         return
 
     cfg = load_config()
-    agentic = bool(body.get("agentic", True))
+    if "agentic" in body:
+        agentic = bool(body.get("agentic"))
+    else:
+        agentic = cfg.llm_agentic_enabled
     try:
         if agentic:
             conv = get_conversation()
             city_name = resolve_city_display_name(snapshot, meta)
             conv.set_city_context(city_name, brief)
+            user_content, retrieval_context, retrieval_bundle = prepare_agentic_ask(
+                question,
+                brief=brief,
+                bundle=bundle,
+                export_path=export_path,
+            )
             result = None
             for kind, payload in iter_agentic_answer(
                 question,
@@ -225,6 +240,9 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
                 snapshot=snapshot,
                 cfg=cfg,
                 history_messages=conv.messages_for_llm(),
+                retrieval_context=retrieval_context,
+                retrieval_bundle=retrieval_bundle,
+                user_content=user_content,
             ):
                 if kind == "status":
                     yield _sse_event("status", {"text": str(payload)})
@@ -237,7 +255,15 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
             conv.add_turn("assistant", answer, sources=sources)
             for chunk in stream_text_chunks(answer):
                 yield _sse_event("token", {"text": chunk})
-            yield _sse_event("done", {"mode": "llm", "agentic": True, "tool_calls": result.tool_calls})
+            yield _sse_event(
+                "done",
+                {
+                    "mode": "llm",
+                    "agentic": True,
+                    "tool_calls": result.tool_calls,
+                    "fallback_used": result.fallback_used,
+                },
+            )
         else:
             for chunk in stream_answer(bundle, cfg=cfg):
                 yield _sse_event("token", {"text": chunk})
@@ -266,6 +292,8 @@ def api_setup_preview() -> dict[str, Any]:
         "llm_provider": cfg.llm_provider,
         "llm_api_key_env": cfg.llm_api_key_env,
         "llm_configured": llm is not None,
+        "llm_agentic_enabled": cfg.llm_agentic_enabled,
+        "llm_max_tool_rounds": cfg.llm_max_tool_rounds,
         "config_exists": config_path().is_file(),
         "onboarding_complete": cfg.onboarding_complete,
         "mod_installed": mod_installed(),
@@ -281,10 +309,12 @@ def api_setup_save(body: dict[str, Any] | None = None) -> dict[str, Any]:
             overrides[key] = Path(str(raw)).expanduser()
     model = body.get("llm_model")
     provider = body.get("llm_provider")
+    agentic = body.get("llm_agentic_enabled")
     written = save_detected_config(
         path_overrides=overrides or None,
         llm_model=str(model) if model else None,
         llm_provider=str(provider) if provider else None,
+        llm_agentic_enabled=bool(agentic) if agentic is not None else None,
     )
     return {"ok": True, "config_path": str(written)}
 

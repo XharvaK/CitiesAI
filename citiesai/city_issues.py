@@ -230,7 +230,9 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     education = pick_group(snapshot, "Education")
     employment = _num(pick(education, "EmploymentRatePercent", "employment_rate_percent"))
     workforce = pick_group(snapshot, "Workforce")
-    unemployed = _num(pick(workforce, "UnemployedWorkers", "unemployed_workers"))
+    unemployed = _num(
+        pick(workforce, "Unemployed", "unemployed", "UnemployedWorkers", "unemployed_workers")
+    )
 
     transport = pick_group(snapshot, "TransportProxies")
     congestion = _num(pick(transport, "CongestionIndex0To1", "congestion_index_0_to_1"))

@@ -302,6 +302,11 @@
                 </select>
               </label>
               <label class="field"><span class="field-label">Model</span><input id="setup-model" class="control" placeholder="mistral-medium-latest" /></label>
+              <label class="checkbox">
+                <input id="setup-agentic" type="checkbox" checked />
+                Deep research (tool calling)
+              </label>
+              <p class="muted small">When off, Ask uses one API call with pre-fetched sources — faster on free tiers.</p>
               <label class="field"><span class="field-label">API key</span><input id="api-key" class="control" type="password" placeholder="Paste API key" autocomplete="off" /></label>
               <p id="key-hint" class="muted small">Required for Mistral/OpenAI. Local Ollama can use any placeholder.</p>
             </div>

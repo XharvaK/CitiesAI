@@ -7,11 +7,74 @@ from .advice_output import write_advice
 from .city_name import resolve_city_display_name
 from .config import CitiesAIConfig, load_config
 from .conversation import get_conversation
-from .keywords import build_search_queries
+from .keywords import build_search_queries, is_change_question
+from .historian import get_historian
 from .knowledge import format_knowledge_bundle, retrieve_knowledge
 from .llm import generate_agentic_answer, generate_answer
 from .snapshot import SnapshotMeta, load_snapshot_safe, snapshot_meta
 from .summary import build_city_brief
+
+RETRIEVAL_CONTEXT_MAX_CHARS = 5000
+
+
+def extract_retrieval_excerpt(bundle: str, *, max_chars: int = RETRIEVAL_CONTEXT_MAX_CHARS) -> str:
+    marker = "## Question\n"
+    idx = bundle.find(marker)
+    if idx == -1:
+        return bundle[:max_chars]
+    after_question = bundle[idx + len(marker) :]
+    nl = after_question.find("\n")
+    excerpt = after_question[nl:].strip() if nl != -1 else ""
+    return excerpt[:max_chars]
+
+
+def format_session_digest_section(digest: dict[str, Any]) -> str:
+    if not digest.get("has_changes"):
+        return ""
+    lines = ["## Recent changes (session)"]
+    for item in digest.get("summary", []):
+        lines.append(f"- {item}")
+    return "\n".join(lines)
+
+
+def build_agentic_user_content(
+    question: str,
+    *,
+    city_brief: str,
+    retrieval_context: str | None = None,
+    session_digest: dict[str, Any] | None = None,
+) -> str:
+    parts = [f"# City brief\n{city_brief}"]
+    if session_digest:
+        section = format_session_digest_section(session_digest)
+        if section:
+            parts.append(section)
+    if retrieval_context:
+        parts.append(f"## Pre-retrieved sources\n{retrieval_context}")
+    parts.append(f"## Question\n{question}")
+    return "\n\n".join(parts)
+
+
+def prepare_agentic_ask(
+    question: str,
+    *,
+    brief: str,
+    bundle: str,
+    export_path: Path,
+) -> tuple[str, str | None, str | None]:
+    retrieval_context = extract_retrieval_excerpt(bundle)
+    session_digest: dict[str, Any] | None = None
+    if is_change_question(question):
+        historian = get_historian()
+        historian.sync(export_path)
+        session_digest = historian.session_digest(export_path=export_path)
+    user_content = build_agentic_user_content(
+        question,
+        city_brief=brief,
+        retrieval_context=retrieval_context or None,
+        session_digest=session_digest,
+    )
+    return user_content, retrieval_context or None, bundle
 
 
 def meta_to_dict(meta: SnapshotMeta) -> dict[str, Any]:
@@ -128,12 +191,21 @@ def run_ask(
     try:
         if agentic:
             history = conv.messages_for_llm() if multi_turn else None
+            user_content, retrieval_context, retrieval_bundle = prepare_agentic_ask(
+                question,
+                brief=brief,
+                bundle=bundle,
+                export_path=path,
+            )
             result = generate_agentic_answer(
                 question,
                 city_brief=brief,
                 snapshot=snapshot,
                 cfg=cfg,
                 history_messages=history,
+                retrieval_context=retrieval_context,
+                retrieval_bundle=retrieval_bundle,
+                user_content=user_content,
             )
             answer = result.answer
             all_sources = retrieval_sources + [
@@ -141,6 +213,7 @@ def run_ask(
             ]
             payload["sources"] = all_sources
             payload["tool_calls"] = result.tool_calls
+            payload["fallback_used"] = result.fallback_used
         else:
             answer = generate_answer(bundle, cfg=cfg)
     except RuntimeError as exc:

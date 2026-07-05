@@ -70,7 +70,9 @@ def analyze_housing_labor(snapshot: dict[str, Any]) -> dict[str, Any]:
     outside = _num(pick(labor, "OutsideWorkersSharePercent", "outside_workers_share_percent"))
     underemployed = _num(pick(labor, "UnderemployedSharePercent", "underemployed_share_percent"))
 
-    unemployed = _num(pick(workforce, "UnemployedWorkers", "unemployed_workers"))
+    unemployed = _num(
+        pick(workforce, "Unemployed", "unemployed", "UnemployedWorkers", "unemployed_workers")
+    )
     open_jobs = _num(pick(workplaces, "OpenWorkplaces", "open_workplaces"))
 
     if jobs is not None and workers is not None:

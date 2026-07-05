@@ -2,6 +2,19 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.5.2] — 2026-07-05
+
+### Fixes
+
+- **Ask agentic loop** — graceful fallback when tool rounds are exhausted; pre-injected retrieval bundle and session history for “drop/decline” questions; configurable `max_tool_rounds` (default 8); **Deep research** toggle in Settings.
+- **Workforce brief** — city brief and issue detection now read `workers` / `unemployed` from the export (fixes bogus “0 employed workers” in Ask).
+
+### Install
+
+Download **`CitiesAI-Setup-0.5.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+
+---
+
 ## [0.5.1] — 2026-07-05
 
 ### Fixes

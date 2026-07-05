@@ -443,3 +443,80 @@ def test_iter_agentic_answer_direct(monkeypatch: pytest.MonkeyPatch, vendor_samp
     assert events[0][0] == "status"
     assert any(e[0] == "result" for e in events)
     assert events[-1][1].answer == "Focus on transit first."
+
+
+def test_iter_agentic_fallback_after_max_rounds(
+    monkeypatch: pytest.MonkeyPatch, vendor_sample: dict
+) -> None:
+    from citiesai.config import CitiesAIConfig
+    from citiesai.llm import iter_agentic_answer
+
+    def fake_complete(
+        messages: list[dict[str, object]],
+        settings: object,
+        *,
+        tools: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
+        if tools:
+            return {
+                "tool_calls": [
+                    {
+                        "id": "t1",
+                        "function": {"name": "search_wiki", "arguments": '{"query":"wellbeing"}'},
+                    }
+                ]
+            }
+        return {"content": "Pollution is lowering wellbeing."}
+
+    monkeypatch.setattr(
+        "citiesai.llm.resolve_llm_settings",
+        lambda cfg: type("S", (), {"api_key": "x", "base_url": "http://test", "model": "m"})(),
+    )
+    monkeypatch.setattr("citiesai.llm._complete_chat", fake_complete)
+
+    cfg = CitiesAIConfig(llm_max_tool_rounds=2)
+    events = list(
+        iter_agentic_answer(
+            "Why did wellbeing drop?",
+            city_brief="wellbeing: 62",
+            snapshot=vendor_sample,
+            cfg=cfg,
+        )
+    )
+    result = events[-1][1]
+    assert result.fallback_used is True
+    assert "Pollution" in result.answer
+
+
+def test_is_change_question() -> None:
+    from citiesai.keywords import is_change_question
+
+    assert is_change_question("Why did wellbeing drop in my city?")
+    assert not is_change_question("How can I reduce round-trip times across my transit network?")
+
+
+def test_build_agentic_user_content_includes_digest() -> None:
+    from citiesai.ask_core import build_agentic_user_content, extract_retrieval_excerpt
+
+    content = build_agentic_user_content(
+        "Why did wellbeing drop?",
+        city_brief="wellbeing: 62",
+        retrieval_context="wiki: pollution lowers happiness",
+        session_digest={"has_changes": True, "summary": ["Wellbeing: -8 (now 62)"]},
+    )
+    assert "## Recent changes (session)" in content
+    assert "Wellbeing: -8" in content
+    assert "## Pre-retrieved sources" in content
+
+    bundle = "# City brief\nmetrics\n\n## Question\nwhy?\n\n---\nwiki hit"
+    excerpt = extract_retrieval_excerpt(bundle)
+    assert "wiki hit" in excerpt
+    assert "City brief" not in excerpt
+
+
+def test_config_default_max_tool_rounds() -> None:
+    from citiesai.config import DEFAULT_MAX_TOOL_ROUNDS, CitiesAIConfig
+
+    cfg = CitiesAIConfig()
+    assert cfg.llm_max_tool_rounds == DEFAULT_MAX_TOOL_ROUNDS
+    assert cfg.llm_agentic_enabled is True

@@ -9,9 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .agent_tools import TOOL_DEFINITIONS, execute_tool
-from .config import CitiesAIConfig
-
-MAX_TOOL_ROUNDS = 5
+from .config import DEFAULT_MAX_TOOL_ROUNDS, CitiesAIConfig
 
 
 @dataclass(frozen=True)
@@ -27,6 +25,7 @@ class AgenticResult:
     answer: str
     sources: list[dict[str, Any]]
     tool_calls: list[str]
+    fallback_used: bool = False
 
 
 LLM_PRESETS: dict[str, dict[str, str]] = {
@@ -59,6 +58,11 @@ TOOL_STATUS_MESSAGES: dict[str, str] = {
     "get_transit_lines": "Analyzing transit lines…",
 }
 
+AGENTIC_LOOP_ERROR = (
+    "Agentic loop exceeded maximum tool rounds. "
+    "Try disabling Deep research in Settings or ask a narrower question."
+)
+
 
 def resolve_llm_settings(cfg: CitiesAIConfig) -> LLMSettings | None:
     api_key_env = os.environ.get("CITIESAI_LLM_API_KEY_ENV", "").strip() or cfg.llm_api_key_env
@@ -73,7 +77,17 @@ def resolve_llm_settings(cfg: CitiesAIConfig) -> LLMSettings | None:
     return LLMSettings(base_url=base_url.rstrip("/"), model=model, api_key=api_key, api_key_env=api_key_env)
 
 
-def build_system_prompt(*, agentic: bool = False) -> str:
+def max_tool_rounds(cfg: CitiesAIConfig) -> int:
+    env = os.environ.get("CITIESAI_LLM_MAX_TOOL_ROUNDS", "").strip()
+    if env:
+        try:
+            return max(1, int(env))
+        except ValueError:
+            pass
+    return max(1, cfg.llm_max_tool_rounds or DEFAULT_MAX_TOOL_ROUNDS)
+
+
+def build_system_prompt(*, agentic: bool = False, force_answer: bool = False) -> str:
     base = (
         "You are CitiesAI, a read-only gameplay advisor for Cities: Skylines II. "
         "Use the city snapshot metrics first, then wiki and encyclopedia evidence. "
@@ -93,8 +107,13 @@ def build_system_prompt(*, agentic: bool = False) -> str:
     if agentic:
         base += (
             "\n\nYou have tools to fetch metric groups, search wiki/encyclopedia, "
-            "history, and transit lines. Call tools when you need specific data."
+            "history, and transit lines. Use the city brief and any pre-retrieved "
+            "sources first. Call tools only for missing specifics (one metric group, "
+            "transit detail, etc.). Answer after at most 2 tool rounds unless the user "
+            "explicitly asks for exhaustive research."
         )
+        if force_answer:
+            base += "\n\nYou have used all research steps. Answer now from the conversation context."
     else:
         base += "\n- No Sources section, URLs, or citations in the answer body."
     return base
@@ -148,6 +167,31 @@ def _parse_message(data: dict[str, Any]) -> dict[str, Any]:
     return choices[0].get("message") or {}
 
 
+def _complete_chat(
+    messages: list[dict[str, Any]],
+    settings: LLMSettings,
+    *,
+    tools: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    payload = _chat_payload(messages, settings, stream=False, tools=tools)
+    with _post_chat(payload, settings, stream=False) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    return _parse_message(data)
+
+
+def _force_final_answer(messages: list[dict[str, Any]], settings: LLMSettings) -> str:
+    final_messages = list(messages)
+    final_messages[0] = {
+        "role": "system",
+        "content": build_system_prompt(agentic=True, force_answer=True),
+    }
+    message = _complete_chat(final_messages, settings)
+    content = message.get("content")
+    if not content:
+        raise RuntimeError("LLM returned empty content.")
+    return str(content).strip()
+
+
 def iter_agentic_answer(
     question: str,
     *,
@@ -155,6 +199,9 @@ def iter_agentic_answer(
     snapshot: dict[str, Any],
     cfg: CitiesAIConfig,
     history_messages: list[dict[str, str]] | None = None,
+    retrieval_context: str | None = None,
+    retrieval_bundle: str | None = None,
+    user_content: str | None = None,
 ) -> Iterator[tuple[str, Any]]:
     settings = resolve_llm_settings(cfg)
     if settings is None:
@@ -162,9 +209,16 @@ def iter_agentic_answer(
             "No LLM API key found. Add your Mistral key in Settings or set MISTRAL_API_KEY."
         )
 
+    if user_content is None:
+        parts = [f"# City brief\n{city_brief}"]
+        if retrieval_context:
+            parts.append(f"## Pre-retrieved sources\n{retrieval_context}")
+        parts.append(f"## Question\n{question}")
+        user_content = "\n\n".join(parts)
+
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": build_system_prompt(agentic=True)},
-        {"role": "user", "content": f"# City brief\n{city_brief}\n\n## Question\n{question}"},
+        {"role": "user", "content": user_content},
     ]
     if history_messages:
         messages = [messages[0], *history_messages[-8:], messages[1]]
@@ -173,12 +227,10 @@ def iter_agentic_answer(
 
     sources: list[dict[str, Any]] = []
     tool_names: list[str] = []
+    rounds = max_tool_rounds(cfg)
 
-    for _ in range(MAX_TOOL_ROUNDS):
-        payload = _chat_payload(messages, settings, stream=False, tools=TOOL_DEFINITIONS)
-        with _post_chat(payload, settings, stream=False) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        message = _parse_message(data)
+    for _ in range(rounds):
+        message = _complete_chat(messages, settings, tools=TOOL_DEFINITIONS)
         tool_calls = message.get("tool_calls") or []
         if not tool_calls:
             content = message.get("content")
@@ -214,7 +266,36 @@ def iter_agentic_answer(
                 }
             )
 
-    raise RuntimeError("Agentic loop exceeded maximum tool rounds.")
+    yield ("status", "Wrapping up answer…")
+    try:
+        answer = _force_final_answer(messages, settings)
+        yield (
+            "result",
+            AgenticResult(
+                answer=answer,
+                sources=sources,
+                tool_calls=tool_names,
+                fallback_used=True,
+            ),
+        )
+        return
+    except RuntimeError:
+        pass
+
+    if retrieval_bundle:
+        answer = generate_answer(retrieval_bundle, cfg=cfg)
+        yield (
+            "result",
+            AgenticResult(
+                answer=answer,
+                sources=sources,
+                tool_calls=tool_names,
+                fallback_used=True,
+            ),
+        )
+        return
+
+    raise RuntimeError(AGENTIC_LOOP_ERROR)
 
 
 def generate_agentic_answer(
@@ -224,6 +305,9 @@ def generate_agentic_answer(
     snapshot: dict[str, Any],
     cfg: CitiesAIConfig,
     history_messages: list[dict[str, str]] | None = None,
+    retrieval_context: str | None = None,
+    retrieval_bundle: str | None = None,
+    user_content: str | None = None,
     on_status: Callable[[str], None] | None = None,
 ) -> AgenticResult:
     result: AgenticResult | None = None
@@ -233,6 +317,9 @@ def generate_agentic_answer(
         snapshot=snapshot,
         cfg=cfg,
         history_messages=history_messages,
+        retrieval_context=retrieval_context,
+        retrieval_bundle=retrieval_bundle,
+        user_content=user_content,
     ):
         if kind == "status" and on_status:
             on_status(str(payload))
@@ -254,10 +341,7 @@ def generate_answer(prompt: str, *, cfg: CitiesAIConfig) -> str:
         {"role": "system", "content": build_system_prompt()},
         {"role": "user", "content": prompt},
     ]
-    payload = _chat_payload(messages, settings, stream=False)
-    with _post_chat(payload, settings, stream=False) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    message = _parse_message(data)
+    message = _complete_chat(messages, settings)
     content = message.get("content")
     if not content:
         raise RuntimeError("LLM returned empty content.")
@@ -311,10 +395,8 @@ def test_api_key(*, cfg: CitiesAIConfig) -> dict[str, str | bool]:
             {"role": "system", "content": "Reply briefly."},
             {"role": "user", "content": "Reply with exactly: OK"},
         ]
-        payload = _chat_payload(messages, settings, stream=False)
-        with _post_chat(payload, settings, stream=False) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        content = _parse_message(data).get("content", "")
+        message = _complete_chat(messages, settings)
+        content = message.get("content", "")
         return {"ok": True, "model": settings.model, "sample": str(content).strip()[:80]}
     except RuntimeError as exc:
         return {"ok": False, "error": str(exc)}

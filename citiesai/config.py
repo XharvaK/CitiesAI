@@ -29,6 +29,7 @@ def config_path() -> Path:
 
 LEGACY_LLM_MODEL = "mistral-small-latest"
 DEFAULT_LLM_MODEL = "mistral-medium-latest"
+DEFAULT_MAX_TOOL_ROUNDS = 8
 
 
 @dataclass
@@ -40,6 +41,8 @@ class CitiesAIConfig:
     llm_model: str = DEFAULT_LLM_MODEL
     llm_base_url: str = "https://api.mistral.ai/v1"
     llm_api_key_env: str = "MISTRAL_API_KEY"
+    llm_max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS
+    llm_agentic_enabled: bool = True
     onboarding_complete: bool = False
 
     def resolved_export_path(self) -> Path:
@@ -81,6 +84,8 @@ class CitiesAIConfig:
                 "model": self.llm_model,
                 "base_url": self.llm_base_url,
                 "api_key_env": self.llm_api_key_env,
+                "max_tool_rounds": self.llm_max_tool_rounds,
+                "agentic": self.llm_agentic_enabled,
             },
         }
         if self.game_dir:
@@ -108,6 +113,8 @@ class CitiesAIConfig:
         lines.append(f'model = "{self.llm_model}"')
         lines.append(f'base_url = "{self.llm_base_url}"')
         lines.append(f'api_key_env = "{self.llm_api_key_env}"')
+        lines.append(f"max_tool_rounds = {self.llm_max_tool_rounds}")
+        lines.append(f"agentic = {'true' if self.llm_agentic_enabled else 'false'}")
         lines.append("")
         lines.append("[app]")
         lines.append(f"onboarding_complete = {'true' if self.onboarding_complete else 'false'}")
@@ -153,6 +160,13 @@ def load_config() -> CitiesAIConfig:
         cfg.llm_base_url = str(llm["base_url"])
     if llm.get("api_key_env"):
         cfg.llm_api_key_env = str(llm["api_key_env"])
+    if llm.get("max_tool_rounds") is not None:
+        try:
+            cfg.llm_max_tool_rounds = max(1, int(llm["max_tool_rounds"]))
+        except (TypeError, ValueError):
+            pass
+    if "agentic" in llm:
+        cfg.llm_agentic_enabled = bool(llm["agentic"])
 
     if cfg.llm_model == LEGACY_LLM_MODEL:
         cfg.llm_model = DEFAULT_LLM_MODEL

@@ -22,6 +22,7 @@ def save_detected_config(
     path_overrides: dict[str, Path] | None = None,
     llm_model: str | None = None,
     llm_provider: str | None = None,
+    llm_agentic_enabled: bool | None = None,
 ) -> Path:
     discovered = discover_paths()
     cfg = merge_discovered(load_config(), discovered)
@@ -36,6 +37,8 @@ def save_detected_config(
         apply_llm_provider(cfg, llm_provider)
     if llm_model:
         cfg.llm_model = llm_model
+    if llm_agentic_enabled is not None:
+        cfg.llm_agentic_enabled = llm_agentic_enabled
     return cfg.write()
 
 

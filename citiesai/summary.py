@@ -163,8 +163,8 @@ def build_city_brief(snapshot: dict[str, Any], meta: SnapshotMeta) -> str:
         lines.append(f"- transit lines: {lines_total}")
 
     potential_workers = pick(workforce, "TotalPotentialWorkers", "total_potential_workers")
-    employed = pick(workforce, "EmployedWorkers", "employed_workers")
-    unemployed = pick(workforce, "UnemployedWorkers", "unemployed_workers")
+    employed = pick(workforce, "Workers", "workers", "EmployedWorkers", "employed_workers")
+    unemployed = pick(workforce, "Unemployed", "unemployed", "UnemployedWorkers", "unemployed_workers")
     if any(v not in (None, 0) for v in (potential_workers, employed, unemployed)):
         lines.append(
             f"- workforce: potential {potential_workers} | employed {employed} | unemployed {unemployed}"
