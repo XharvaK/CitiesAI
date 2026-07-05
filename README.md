@@ -19,7 +19,7 @@ Cities2-MCP corpus     →  wiki + encyclopedia  →  retrieval for answers
 Your Mistral API key   →  optional LLM  →  synthesized reply
 ```
 
-Export refreshes about every **10 seconds** while a city is loaded in-game (requires the bundled export mod). When CS2 is closed, the last snapshot stays on disk; the dashboard shows **Stale** after ~30 seconds without a new export — that is normal, not a setup error.
+Export refreshes about every **5 seconds** while a city is loaded in-game (requires the bundled export mod). When CS2 is closed, the last snapshot stays on disk; the dashboard shows **Stale** after ~15 seconds without a new export — that is normal, not a setup error.
 
 The **Issues** tab lists setup problems and **current city pressures** (water, health, jobs, transit, budget, and more) with one-click **Ask about this** prompts.
 
@@ -27,7 +27,7 @@ The **Issues** tab lists setup problems and **current city pressures** (water, h
 
 | Requirement | Notes |
 |-------------|--------|
-| **Windows 10/11** | v0.1 ships as a desktop app (WebView2; usually preinstalled on Win 11) |
+| **Windows 10/11** | v0.4 ships as a desktop app (WebView2; usually preinstalled on Win 11) |
 | **Cities: Skylines II** | Steam or Xbox PC (Game Pass) |
 | **CS2 Data Export mod** | Bundled in the Windows installer, or install manually — see [docs/INSTALL-MOD.md](docs/INSTALL-MOD.md) |
 | **Mistral API key** | Optional; free Experiment tier is enough for testing |
@@ -36,7 +36,7 @@ The **Issues** tab lists setup problems and **current city pressures** (water, h
 
 ## Install (Windows — recommended)
 
-1. Download **`CitiesAI-Setup-0.3.0.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+1. Download **`CitiesAI-Setup-0.4.0.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
 2. Run the installer (per-user, no admin). SmartScreen may warn on unsigned builds — use **More info → Run anyway** if you trust the source.
 3. Launch **CitiesAI** from the Start menu.
 4. Follow the onboarding wizard:
@@ -158,21 +158,31 @@ Free-tier rate limits apply on Mistral’s side. If Ask fails, check **Settings 
 
 | Command | Purpose |
 |---------|---------|
-| `citiesai gui` | Desktop app: dashboard, ask, settings, feedback |
+| `citiesai gui` | Desktop app: **Dashboard**, **Insights**, **Issues**, **Ask**, **Settings**, **Feedback** |
+| `citiesai gui --watch` | GUI + desktop notification alerts for city pressures |
 | `citiesai setup` | Detect game paths and write config |
-| `citiesai doctor` | Verify export, wiki, encyclopedia, API key |
+| `citiesai doctor` | Verify snapshot, wiki, encyclopedia, API key |
 | `citiesai context` | Compact city brief from `latest.json` |
 | `citiesai retrieve -q "..."` | Wiki + encyclopedia search only |
 | `citiesai ask "..."` | Brief + retrieval + LLM answer (if key set) |
 | `citiesai ask "..." --no-llm` | Context bundle only (for Cursor/agents) |
+| `citiesai history` | Historian metric series for the current city |
+| `citiesai diff --before … --after …` | Compare two snapshot files |
+| `citiesai transit` | Transit line doctor report |
+| `citiesai report` | Letter-grade report card (CLI) |
+| `citiesai mcp` | MCP server for agents (`get_city_brief`, `get_history`, …) |
 
 Important paths:
 
 ```text
-City export   %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\CS2DataExport\latest.json
-Config        %APPDATA%\CitiesAI\config.toml
-API key file  %APPDATA%\CitiesAI\.env
+City snapshot  %USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\ModsData\CS2DataExport\latest.json
+Config         %APPDATA%\CitiesAI\config.toml
+API key file   %APPDATA%\CitiesAI\.env
+Historian DB   %APPDATA%\CitiesAI\historian.db
+HTML reports   %APPDATA%\CitiesAI\reports\
 ```
+
+MCP setup: [docs/CITIESAI-MCP.md](docs/CITIESAI-MCP.md) · Agent workflow: [docs/AGENTS-AND-MCP.md](docs/AGENTS-AND-MCP.md)
 
 ---
 
@@ -180,7 +190,7 @@ API key file  %APPDATA%\CitiesAI\.env
 
 CitiesAI complements agent workflows; it does not replace them.
 
-- Configure [Cities2-MCP](docs/AGENTS-AND-MCP.md) in `~/.cursor/mcp.json`.
+- Configure [Cities2-MCP](docs/AGENTS-AND-MCP.md) in `~/.cursor/mcp.json` and optionally `citiesai mcp` for live city tools — see [docs/CITIESAI-MCP.md](docs/CITIESAI-MCP.md).
 - Copy [skills/cities2-advisor/SKILL.md](skills/cities2-advisor/SKILL.md) into your agent skills folder.
 - Run `citiesai ask --no-llm` to get a grounded prompt bundle for your agent.
 

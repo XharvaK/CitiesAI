@@ -10,9 +10,10 @@ Read-only CS2 advisor: city export JSON + Cities2-MCP wiki/encyclopedia + option
 ## Workflow (my-city questions)
 
 1. `citiesai doctor` or `scripts/verify-export.ps1`
-2. `citiesai gui` (desktop app: dashboard, ask, settings, feedback) or `citiesai context -q "..."` or read `latest.json`
-3. Cities2-MCP `search` + `search_encyclopedia` (or `citiesai retrieve`)
-4. Synthesize with city numbers first; cite sources
+2. `citiesai gui` (dashboard, insights, ask, settings, feedback) or `citiesai context -q "..."` or read `latest.json`
+3. `citiesai history --digest` for cross-session changes; `citiesai report` / `citiesai transit` for analyzers
+4. Cities2-MCP `search` + `search_encyclopedia` (or `citiesai retrieve`); optional `citiesai mcp` for agent tools
+5. Synthesize with city numbers first; cite sources
 
 Skill: `skills/cities2-advisor/SKILL.md`
 

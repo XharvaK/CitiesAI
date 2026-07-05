@@ -55,6 +55,8 @@ def save_env_var(name: str, value: str) -> Path:
     if not found:
         lines.append(f'{name}="{_escape(value)}"')
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if sys.platform != "win32":
+        path.chmod(0o600)
     os.environ[name] = value
     return path
 

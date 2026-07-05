@@ -129,15 +129,27 @@ def snapshot_signals(snapshot: dict) -> list[str]:
     return _unique(terms)
 
 
+def _unavailable_groups(snapshot: dict) -> set[str]:
+    meta = pick_group(snapshot, "Meta")
+    status_map = pick(meta, "MetricStatus", "metric_status")
+    if not isinstance(status_map, dict):
+        return set()
+    return {str(key).lower() for key, value in status_map.items() if str(value).lower() == "unavailable"}
+
+
 def build_search_queries(snapshot: dict, question: str | None = None, *, max_queries: int = 4) -> list[str]:
     question_terms = _tokenize(question or "")
     signal_terms = snapshot_signals(snapshot)
+    unavailable = _unavailable_groups(snapshot)
 
     queries: list[str] = []
     if question_terms:
         queries.append(" ".join(question_terms[:10]))
     if signal_terms:
-        queries.append(" ".join(signal_terms[:10]))
+        filtered_signals = list(signal_terms)
+        if "transport_proxies" in unavailable and "congestion" in filtered_signals:
+            filtered_signals = [t for t in filtered_signals if t not in ("congestion", "traffic")]
+        queries.append(" ".join(filtered_signals[:10]))
     if question_terms and signal_terms:
         merged = _unique([*question_terms[:6], *signal_terms[:6]])
         queries.append(" ".join(merged[:12]))

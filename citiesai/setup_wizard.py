@@ -4,12 +4,24 @@ from pathlib import Path
 
 from .config import load_config, merge_discovered
 from .discovery import discover_paths
+from .llm import LLM_PRESETS
+
+
+def apply_llm_provider(cfg, provider: str) -> None:
+    preset = LLM_PRESETS.get(provider)
+    if not preset:
+        return
+    cfg.llm_provider = provider
+    cfg.llm_base_url = preset["base_url"]
+    cfg.llm_api_key_env = preset["api_key_env"]
+    cfg.llm_model = preset["model"]
 
 
 def save_detected_config(
     *,
     path_overrides: dict[str, Path] | None = None,
     llm_model: str | None = None,
+    llm_provider: str | None = None,
 ) -> Path:
     discovered = discover_paths()
     cfg = merge_discovered(load_config(), discovered)
@@ -20,6 +32,8 @@ def save_detected_config(
             cfg.locale_cok = path_overrides["locale_cok"]
         if path_overrides.get("export_path"):
             cfg.export_path = path_overrides["export_path"]
+    if llm_provider:
+        apply_llm_provider(cfg, llm_provider)
     if llm_model:
         cfg.llm_model = llm_model
     return cfg.write()

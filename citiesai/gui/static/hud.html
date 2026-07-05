@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CitiesAI HUD</title>
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    body {
+      margin: 0;
+      background: color-mix(in srgb, var(--paper) 92%, transparent);
+      color: var(--body);
+      font-family: var(--font);
+    }
+    .hud { padding: 10px 12px; }
+    .hud-title { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .hud-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .hud-kpi {
+      background: var(--bg-card);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+    }
+    .hud-kpi label { display: block; font-size: 10px; color: var(--muted); }
+    .hud-kpi strong { font-size: 15px; color: var(--ink); }
+    .hud-alert { margin-top: 8px; font-size: 11px; color: var(--warn); min-height: 14px; }
+  </style>
+</head>
+<body>
+  <div class="hud">
+    <div class="hud-title" id="hud-city">CitiesAI HUD</div>
+    <div class="hud-grid">
+      <div class="hud-kpi"><label>Treasury</label><strong id="hud-treasury">—</strong></div>
+      <div class="hud-kpi"><label>Population</label><strong id="hud-pop">—</strong></div>
+      <div class="hud-kpi"><label>Wellbeing</label><strong id="hud-wellbeing">—</strong></div>
+    </div>
+    <div class="hud-alert" id="hud-alert"></div>
+  </div>
+  <script>
+    const POLL_MS = 5000;
+    function fmt(n) {
+      if (n == null || Number.isNaN(n)) return "n/a";
+      return Math.round(n).toLocaleString();
+    }
+    async function refresh() {
+      try {
+        const res = await fetch("/api/dashboard");
+        const data = await res.json();
+        if (!data.ok) return;
+        const m = data.metrics;
+        document.getElementById("hud-city").textContent = m.city_name || "Your city";
+        document.getElementById("hud-treasury").textContent = "¢" + fmt(m.treasury);
+        document.getElementById("hud-pop").textContent = fmt(m.population);
+        document.getElementById("hud-wellbeing").textContent = fmt(m.wellbeing);
+        const alerts = (data.forecasts && data.forecasts.alerts) || [];
+        document.getElementById("hud-alert").textContent = alerts[0] || "";
+      } catch { /* ignore */ }
+    }
+    refresh();
+    setInterval(refresh, POLL_MS);
+  </script>
+</body>
+</html>

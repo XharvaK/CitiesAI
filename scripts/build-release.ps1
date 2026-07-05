@@ -59,7 +59,6 @@ if ($WebhookUrl) {
 }
 
 Write-Host '== PyInstaller ==' -ForegroundColor Cyan
-uv pip install pyinstaller
 uv run pyinstaller packaging\citiesai.spec --noconfirm --distpath dist --workpath build\pyinstaller
 
 $Exe = Join-Path $RepoRoot 'dist\CitiesAI.exe'
@@ -76,7 +75,8 @@ $Iscc = @(
 
 if ($Iscc) {
     Write-Host '== Inno Setup ==' -ForegroundColor Cyan
-    & $Iscc (Join-Path $RepoRoot 'packaging\CitiesAI.iss')
+    $Version = (uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+    & $Iscc "/DMyAppVersion=$Version" (Join-Path $RepoRoot 'packaging\CitiesAI.iss')
     Write-Host 'Installer built under dist\' -ForegroundColor Green
 } else {
     Write-Host 'Inno Setup not found. Ship dist\CitiesAI.exe or install Inno Setup 6.' -ForegroundColor Yellow

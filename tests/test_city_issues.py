@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from citiesai.city_issues import detect_city_issues
 
 

@@ -16,7 +16,7 @@ datas = [
     (str(repo / "citiesai" / "gui" / "static"), "citiesai/gui/static"),
     (str(repo / "pyproject.toml"), "."),
 ]
-hiddenimports = ["cities2_mcp", "cities2_mcp.game_encyclopedia", "cities2_mcp.wiki_corpus"]
+hiddenimports = ["cities2_mcp", "cities2_mcp.game_encyclopedia"]
 binaries: list = []
 
 _mcp_datas, _mcp_binaries, _mcp_hidden = collect_all("cities2_mcp")
@@ -37,6 +37,10 @@ if bundled_mod.is_dir():
 webhook_bundle = bundled_dir / "feedback_webhook.url"
 if webhook_bundle.is_file():
     datas.append((str(webhook_bundle), "citiesai/bundled"))
+
+logo_png = packaging_dir / "assets" / "logo.png"
+if logo_png.is_file():
+    datas.append((str(logo_png), "packaging/assets"))
 
 a = Analysis(
     [str(repo / "citiesai" / "app.py")],

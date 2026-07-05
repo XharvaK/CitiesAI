@@ -7,7 +7,7 @@
 2. Load a **city** (not main menu).
 3. Check log:
    `%USERPROFILE%\AppData\LocalLow\Colossal Order\Cities Skylines II\Logs\CS2DataExport.log`
-4. Wait up to 10 seconds for first export.
+4. Wait up to 5 seconds for first export.
 
 `Modding.log` may show `Enabled Mods: (none)` for local code mods. Look for `Loaded CS2DataExport` instead.
 
@@ -62,4 +62,4 @@ Other providers: set `CITIESAI_LLM_BASE_URL` and `CITIESAI_LLM_API_KEY_ENV`.
 
 ## Stale snapshot
 
-Export refreshes every ~10 seconds. If `citiesai context` shows `stale (>30 sec)`, load the correct city in-game or wait for the next cycle.
+Export refreshes every ~5 seconds. If `citiesai context` shows `stale (>15 sec)`, load the correct city in-game or wait for the next cycle.

@@ -10,23 +10,31 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
+from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import webview
 
+from ..city_name import resolve_city_display_name
 from ..config import apply_config_to_env, load_config
+from ..constants import HISTORY_MAX_POINTS
+from ..dashboard import extract_headline_metrics
 from ..env_store import load_env_file
-from ..snapshot_history import get_history
+from ..historian import get_historian
+from ..snapshot import load_snapshot_safe, snapshot_meta
 from ..version import __version__
+from ..watch import get_watch_service
 from .api import (
-    api_ask,
     api_ask_stream,
+    api_clear_chat,
     api_dashboard,
+    api_export_report,
     api_feedback,
-    api_history,
+    api_insights,
     api_install_mod,
     api_issues,
+    api_llm_presets,
     api_onboarding_complete,
     api_save_key,
     api_setup_preview,
@@ -35,6 +43,8 @@ from .api import (
     api_suggestions,
     api_test_key,
     api_version,
+    api_watch_status,
+    api_watch_toggle,
 )
 
 DEFAULT_HOST = "127.0.0.1"
@@ -53,6 +63,13 @@ def _guess_type(name: str) -> str:
     return guessed or "application/octet-stream"
 
 
+MAX_JSON_BODY_BYTES = 1_048_576
+
+
+class CitiesAIHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+
 class CitiesAIHandler(BaseHTTPRequestHandler):
     server_version = f"CitiesAI/{__version__}"
 
@@ -63,6 +80,8 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0:
             return {}
+        if length > MAX_JSON_BODY_BYTES:
+            raise ValueError(f"Request body too large ({length} bytes; max {MAX_JSON_BODY_BYTES})")
         raw = self.rfile.read(length)
         try:
             data = json.loads(raw.decode("utf-8"))
@@ -90,8 +109,15 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send_static(self, name: str) -> None:
+        if ".." in name or name.startswith(("/", "\\")) or "\\" in name:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid path"})
+            return
+        safe_name = Path(name).name
+        if not safe_name or safe_name != Path(name).name:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid path"})
+            return
         try:
-            body = _static_file(name)
+            body = _static_file(safe_name)
         except FileNotFoundError:
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
             return
@@ -104,6 +130,9 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
         if route == "/":
             self._send_static("index.html")
             return
+        if route == "/hud":
+            self._send_static("hud.html")
+            return
         if route.startswith("/static/"):
             self._send_static(route.removeprefix("/static/"))
             return
@@ -112,19 +141,29 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/version": api_version,
             "/api/status": api_status,
             "/api/dashboard": api_dashboard,
-            "/api/brief": api_dashboard,
-            "/api/history": api_history,
+            "/api/insights": api_insights,
             "/api/issues": api_issues,
             "/api/suggestions": api_suggestions,
             "/api/setup": api_setup_preview,
             "/api/settings/key/test": api_test_key,
+            "/api/settings/llm-presets": api_llm_presets,
+            "/api/watch": api_watch_status,
         }
         handler = handlers.get(route)
         if handler is None:
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
             return
         try:
-            result = handler()
+            if route == "/api/dashboard":
+                qs = parse_qs(parsed.query)
+                try:
+                    limit = int(qs.get("limit", [str(HISTORY_MAX_POINTS)])[0])
+                except (TypeError, ValueError):
+                    limit = HISTORY_MAX_POINTS
+                limit = max(10, min(limit, HISTORY_MAX_POINTS))
+                result = api_dashboard(limit=limit)
+            else:
+                result = handler()
         except Exception as exc:  # noqa: BLE001 - return JSON for GUI clients
             self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
             return
@@ -146,7 +185,7 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
                 for event in api_ask_stream(body):
                     self.wfile.write(event.encode("utf-8"))
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
             except Exception as exc:  # noqa: BLE001 - best-effort error event after headers
                 try:
@@ -158,13 +197,15 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             return
 
         post_handlers: dict[str, Any] = {
-            "/api/ask": api_ask,
             "/api/setup": api_setup_save,
             "/api/onboarding/complete": api_onboarding_complete,
             "/api/settings/key": api_save_key,
             "/api/settings/key/test": api_test_key,
             "/api/install-mod": api_install_mod,
             "/api/feedback": api_feedback,
+            "/api/watch": api_watch_toggle,
+            "/api/chat/clear": api_clear_chat,
+            "/api/report/export": api_export_report,
         }
         handler = post_handlers.get(route)
         if handler is None:
@@ -192,13 +233,25 @@ def _wait_for_url(url: str, *, timeout: float = 8.0) -> None:
     raise RuntimeError(f"Server did not become ready at {url}")
 
 
-def _shutdown_server(server: ThreadingHTTPServer) -> None:
-    get_history().stop()
+def _shutdown_server(server: CitiesAIHTTPServer) -> None:
+    try:
+        cfg = load_config()
+        export_path = cfg.resolved_export_path()
+        if export_path.is_file():
+            snapshot, _ = load_snapshot_safe(export_path)
+            if snapshot:
+                meta = snapshot_meta(snapshot, path=export_path)
+                metrics = extract_headline_metrics(snapshot, meta)
+                city_name = resolve_city_display_name(snapshot, meta)
+                get_historian().record_session_end(city_name, metrics)
+    except OSError:
+        pass
+    get_watch_service().stop()
     server.shutdown()
     server.server_close()
 
 
-def _run_console_server(server: ThreadingHTTPServer, url: str) -> int:
+def _run_console_server(server: CitiesAIHTTPServer, url: str) -> int:
     print(f"CitiesAI v{__version__} running at {url}")
     print("Press Ctrl+C to stop.")
     try:
@@ -210,7 +263,7 @@ def _run_console_server(server: ThreadingHTTPServer, url: str) -> int:
     return 0
 
 
-def _run_native_window(server: ThreadingHTTPServer, url: str) -> int:
+def _run_native_window(server: CitiesAIHTTPServer, url: str, *, hud: bool = False) -> int:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -227,6 +280,15 @@ def _run_native_window(server: ThreadingHTTPServer, url: str) -> int:
         height=840,
         min_size=(900, 600),
     )
+    if hud:
+        webview.create_window(
+            "CitiesAI HUD",
+            f"{url.rstrip('/')}/hud",
+            width=360,
+            height=200,
+            frameless=True,
+            on_top=True,
+        )
     webview.start()
     _shutdown_server(server)
     return 0
@@ -237,12 +299,15 @@ def run_gui(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     window: WindowMode = "native",
+    hud: bool = False,
+    watch: bool = False,
 ) -> int:
     load_env_file()
     apply_config_to_env(load_config())
-    get_history().start()
+    if watch:
+        get_watch_service().start()
     try:
-        server = ThreadingHTTPServer((host, port), CitiesAIHandler)
+        server = CitiesAIHTTPServer((host, port), CitiesAIHandler)
     except OSError as exc:
         print(
             f"Could not start CitiesAI on {host}:{port} ({exc}). "
@@ -259,4 +324,4 @@ def run_gui(
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
         return _run_console_server(server, url)
 
-    return _run_native_window(server, url)
+    return _run_native_window(server, url, hud=hud)

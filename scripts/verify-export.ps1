@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 
 if (-not (Test-Path -LiteralPath $LatestExport)) {
     Write-Host "Export not found: $LatestExport" -ForegroundColor Red
-    Write-Host 'Load a city in CS2 with CS2 Data Export enabled, then wait up to 60 seconds for an export cycle.'
+    Write-Host 'Load a city in CS2 with CS2 Data Export enabled, then wait up to 10 seconds for an export cycle.'
     exit 2
 }
 

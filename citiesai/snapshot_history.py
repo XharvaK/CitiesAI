@@ -8,7 +8,7 @@ from typing import Any
 
 from .config import load_config
 from .dashboard import extract_headline_metrics
-from .snapshot import load_snapshot, snapshot_meta
+from .snapshot import load_snapshot_safe, snapshot_meta
 
 _HISTORY_KEYS = (
     "population",
@@ -66,7 +66,9 @@ class SnapshotHistory:
             if self._last_mtime is not None and mtime == self._last_mtime:
                 return False
             self._last_mtime = mtime
-        snapshot = load_snapshot(path)
+        snapshot, _ = load_snapshot_safe(path)
+        if snapshot is None:
+            return False
         meta = snapshot_meta(snapshot, path=path)
         headline = extract_headline_metrics(snapshot, meta)
         point = HistoryPoint(

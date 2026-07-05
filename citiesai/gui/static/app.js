@@ -1,5 +1,11 @@
-const POLL_MS = 10000;
+const POLL_MS = 5000;
+const STATUS_POLL_INTERVALS = 6;
 const ASK_SUBMIT_LABEL = "Send";
+
+let statusPollCounter = 0;
+let pollErrorActive = false;
+let watchToggleTouched = false;
+let lastIssuesFingerprint = "";
 
 const ONBOARDING_STEPS = [
   {
@@ -13,14 +19,13 @@ const ONBOARDING_STEPS = [
   },
   {
     title: "Install data export mod",
-    html: `<p>A tiny mod writes a snapshot of your city every ~10 seconds while you play. Close CS2 if install fails.</p><p id="onboard-mod" class="muted"></p>`,
+    html: `<p>A tiny mod writes a snapshot of your city every ~5 seconds while you play. Close CS2 if install fails.</p><p id="onboard-mod" class="muted"></p>`,
     onEnter: checkMod,
   },
   {
     title: "Load a city in-game",
     html: `<p>Launch CS2, enable <strong>CS2 Data Export</strong>, and load your city. We'll wait for the first snapshot.</p><p id="onboard-export" class="muted">Waiting…</p>`,
     onEnter: waitForExport,
-    autoAdvance: true,
   },
   {
     title: "AI answers (optional)",
@@ -76,10 +81,19 @@ async function fetchJson(url, options) {
 }
 
 function toast(message, kind = "") {
+  const root = $("toast-root");
+  if (kind === "err" && pollErrorActive && root?.dataset.lastErr === message) return;
+  if (kind === "err") {
+    pollErrorActive = true;
+    if (root) root.dataset.lastErr = message;
+  } else if (kind === "ok") {
+    pollErrorActive = false;
+    if (root) delete root.dataset.lastErr;
+  }
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
   el.textContent = message;
-  $("toast-root").appendChild(el);
+  root.appendChild(el);
   setTimeout(() => el.remove(), 4200);
 }
 
@@ -157,30 +171,92 @@ function freshnessCountdown(ageSeconds) {
   return Math.max(0, 30 - ageSeconds);
 }
 
-function drawSparkline(svg, values) {
-  const nums = (values || []).filter((v) => typeof v === "number");
+function safeHttpUrl(url) {
+  try {
+    const parsed = new URL(String(url));
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function issuesFingerprint(issues) {
+  return JSON.stringify((issues || []).map((i) => `${i.id}:${i.severity}`));
+}
+
+function drawSparkline(svg, values, projected) {
+  const nums = (values || []).filter((v) => typeof v === "number" && Number.isFinite(v));
+  const proj = (projected || []).filter((v) => typeof v === "number" && Number.isFinite(v));
   if (nums.length < 2) return;
+  const combined = proj.length ? [...nums, ...proj] : nums;
   const w = 160;
   const h = 28;
-  const min = Math.min(...nums);
-  const max = Math.max(...nums);
+  const min = Math.min(...combined);
+  const max = Math.max(...combined);
   const range = max - min || 1;
-  const pts = nums.map((v, i) => {
-    const x = (i / (nums.length - 1)) * w;
+  const toPoint = (v, i, total) => {
+    const x = (i / (total - 1)) * w;
     const y = h - ((v - min) / range) * (h - 4) - 2;
     return `${x},${y}`;
-  });
-  svg.innerHTML = `<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${pts.join(" ")}" />`;
+  };
+  const solidPts = nums.map((v, i) => toPoint(v, i, combined.length));
+  let html = `<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${solidPts.join(" ")}" />`;
+  if (proj.length) {
+    const dashedPts = [
+      toPoint(nums[nums.length - 1], nums.length - 1, combined.length),
+      ...proj.map((v, i) => toPoint(v, nums.length + i, combined.length)),
+    ];
+    html += `<polyline fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.55" points="${dashedPts.join(" ")}" />`;
+  }
+  svg.innerHTML = html;
 }
 
 function formatHistoryDuration(seconds) {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 1) return "";
   if (seconds < 120) return `~${Math.round(seconds)}s`;
-  return `~${Math.round(seconds / 60)} min`;
+  if (seconds < 7200) return `~${Math.round(seconds / 60)} min`;
+  return `~${(seconds / 3600).toFixed(1)}h`;
 }
 
-function drawDetailChart(svg, { timestamps, values, suffix = "" }) {
-  const nums = (values || []).filter((v) => typeof v === "number");
+function parseHistoryTs(iso) {
+  if (iso == null) return null;
+  const ms = Date.parse(String(iso));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function historySpanSeconds(timestamps) {
+  const parsed = (timestamps || []).map(parseHistoryTs).filter((t) => t != null);
+  if (parsed.length < 2) return null;
+  return (parsed[parsed.length - 1] - parsed[0]) / 1000;
+}
+
+function historyOffsetSeconds(timestamps, index) {
+  const parsed = (timestamps || []).map(parseHistoryTs);
+  const last = parsed[parsed.length - 1];
+  const at = parsed[index];
+  if (last == null || at == null) return null;
+  return (last - at) / 1000;
+}
+
+function formatAxisTick(n, options = {}) {
+  const { currency = false, decimals = 0, compact = true, suffix = "" } = options;
+  if (n == null || Number.isNaN(n)) return "n/a";
+  const abs = Math.abs(Number(n));
+  let body;
+  if (compact && abs >= 1_000_000) {
+    body = `${(Number(n) / 1_000_000).toFixed(1)}M`;
+  } else if (compact && abs >= 10_000) {
+    body = `${(Number(n) / 1_000).toFixed(1)}K`;
+  } else {
+    body = formatNum(n, { decimals });
+  }
+  if (currency) return `¢${body}`;
+  return `${body}${suffix}`;
+}
+
+function drawDetailChart(svg, { timestamps, values, suffix = "", currency = false }) {
+  const nums = (values || []).filter((v) => typeof v === "number" && Number.isFinite(v));
   if (!svg || nums.length < 2) {
     if (svg) svg.innerHTML = "";
     return false;
@@ -188,12 +264,22 @@ function drawDetailChart(svg, { timestamps, values, suffix = "" }) {
 
   const width = 560;
   const height = 220;
-  const pad = { top: 16, right: 16, bottom: 28, left: 52 };
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
+  const axisDecimals = suffix === "%" ? 1 : 0;
   const min = Math.min(...nums);
   const max = Math.max(...nums);
   const range = max - min || 1;
+  const yTicks = [min, min + range / 2, max];
+  const tickLabels = yTicks.map((tick) =>
+    formatAxisTick(tick, { currency, decimals: axisDecimals, compact: true, suffix: currency ? "" : suffix })
+  );
+  const pad = {
+    top: 16,
+    right: 16,
+    bottom: 28,
+    left: Math.min(88, Math.max(52, Math.max(...tickLabels.map((l) => l.length)) * 6 + 12)),
+  };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
 
   const points = nums.map((v, i) => {
     const x = pad.left + (i / (nums.length - 1)) * plotW;
@@ -201,28 +287,28 @@ function drawDetailChart(svg, { timestamps, values, suffix = "" }) {
     return { x, y, v };
   });
 
-  const yTicks = [min, min + range / 2, max];
   const yTickLines = yTicks
-    .map((tick) => {
+    .map((tick, i) => {
       const y = pad.top + plotH - ((tick - min) / range) * plotH;
-      const label = `${formatNum(tick, { decimals: suffix === "%" ? 1 : 0 })}${suffix}`;
+      const label = tickLabels[i];
       return `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" class="chart-grid" />
-        <text x="${pad.left - 8}" y="${y + 4}" class="chart-axis" text-anchor="end">${label}</text>`;
+        <text x="${pad.left - 6}" y="${y + 4}" class="chart-axis" text-anchor="end">${label}</text>`;
     })
     .join("");
 
   const ts = timestamps || [];
   const xLabels = [];
   if (ts.length >= 2) {
-    const first = ts[0];
-    const last = ts[ts.length - 1];
     const midIdx = Math.floor((ts.length - 1) / 2);
+    const spanSec = historySpanSeconds(ts);
+    const midSec = historyOffsetSeconds(ts, midIdx);
     const slots = [
-      { idx: 0, label: formatHistoryDuration(last - first) + " ago" },
-      { idx: midIdx, label: formatHistoryDuration(last - ts[midIdx]) + " ago" },
+      { idx: 0, label: spanSec != null ? `${formatHistoryDuration(spanSec)} ago` : "" },
+      { idx: midIdx, label: midSec != null ? `${formatHistoryDuration(midSec)} ago` : "" },
       { idx: ts.length - 1, label: "now" },
     ];
     for (const slot of slots) {
+      if (!slot.label) continue;
       const x = pad.left + (slot.idx / (nums.length - 1)) * plotW;
       xLabels.push(`<text x="${x}" y="${height - 8}" class="chart-axis" text-anchor="middle">${slot.label}</text>`);
     }
@@ -316,8 +402,11 @@ function renderMarkdown(text) {
   return out.join("");
 }
 
-function typingIndicatorHtml() {
-  return '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+function typingIndicatorHtml(statusText = "") {
+  const status = statusText
+    ? `<div class="ask-status muted small">${escapeHtml(statusText)}</div>`
+    : "";
+  return `${status}<span class="typing-indicator"><span></span><span></span><span></span></span>`;
 }
 
 function autoGrowTextarea(el) {
@@ -328,7 +417,63 @@ function autoGrowTextarea(el) {
   el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
 }
 
-let feedbackContextIssueId = "";
+function scrollChatToBottom(behavior = "auto") {
+  const log = $("chat-log");
+  if (!log) return;
+  requestAnimationFrame(() => {
+    log.scrollTo({ top: log.scrollHeight, behavior });
+    const last = log.lastElementChild;
+    if (last) last.scrollIntoView({ block: "end", behavior });
+  });
+}
+
+function askFromPrompt(prompt) {
+  $("question").value = prompt;
+  autoGrowTextarea($("question"));
+  switchView("ask");
+  scrollChatToBottom();
+  $("ask-form").requestSubmit();
+}
+
+function gradeClass(grade) {
+  if (grade === "N/A") return "grade-NA";
+  return `grade-${grade}`;
+}
+
+const modalTrapCleanups = new WeakMap();
+
+function bindModalFocusTrap(modalEl, onClose) {
+  const prev = modalTrapCleanups.get(modalEl);
+  if (prev) prev();
+
+  const selector =
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const nodes = [...modalEl.querySelectorAll(selector)].filter((el) => el.offsetParent !== null);
+    if (!nodes.length) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
+  modalEl.addEventListener("keydown", onKeyDown);
+  const cleanup = () => modalEl.removeEventListener("keydown", onKeyDown);
+  modalTrapCleanups.set(modalEl, cleanup);
+  return cleanup;
+}
 
 function switchView(name, options = {}) {
   document.querySelectorAll(".nav-item").forEach((btn) => {
@@ -352,12 +497,16 @@ function switchView(name, options = {}) {
     $("question").focus();
   }
   if (name === "settings") void loadSettings();
-  if (name === "issues") refreshIssues({ toastOnError: true });
+  if (name === "insights") {
+    void loadInsights();
+  }
+  if (name === "issues") {
+    refreshIssues({ toastOnError: true });
+    void initWatchToggle();
+  }
   if (name === "feedback") {
-    if (!options.issueId) feedbackContextIssueId = "";
     if (options.category) setFeedbackCategory(options.category);
     if (options.message) $("feedback-message").value = options.message;
-    if (options.issueId) feedbackContextIssueId = options.issueId;
     updateFeedbackIssuesLink();
   }
 }
@@ -368,12 +517,12 @@ function blockingIssueCount(issues) {
 
 function applyIssuesData(data) {
   lastIssues = data.issues || [];
-  const blocking = data.blocking_count ?? blockingIssueCount(lastIssues);
+  updateIssuesNavLabel(lastIssues);
   if ($("view-issues").classList.contains("active")) {
     renderIssues(lastIssues);
   }
   if (lastStatus) {
-    renderHealthStrip(lastStatus, blocking);
+    renderHealthStrip(lastStatus);
   }
   updateFeedbackIssuesLink();
 }
@@ -381,7 +530,7 @@ function applyIssuesData(data) {
 const PATH_LABELS = {
   game_dir: "Game folder",
   locale_cok: "Locale file",
-  export_path: "Export file",
+  export_path: "Snapshot file",
 };
 
 /** Fallback when an older CitiesAI build has no /api/issues route. */
@@ -399,7 +548,6 @@ function synthesizeIssuesFromStatus(status) {
       hint: missing
         ? "Use Settings to re-detect paths or set them manually."
         : "Use Settings to detect your game installation.",
-      report_category: "bug",
       action_view: "settings",
     });
   }
@@ -410,7 +558,6 @@ function synthesizeIssuesFromStatus(status) {
       title: "Data export mod not installed",
       detail: "CitiesAI needs the CS2 Data Export mod to read your city.",
       hint: "Close CS2, then install the mod from Settings.",
-      report_category: "bug",
       action_view: "settings",
     });
   }
@@ -419,20 +566,18 @@ function synthesizeIssuesFromStatus(status) {
     issues.push({
       id: "export_missing",
       severity: "warn",
-      title: "No city export yet",
+      title: "No city snapshot yet",
       detail: "Load a city in CS2 with the Data Export mod enabled.",
       hint: "After loading, wait a few seconds for the first snapshot.",
-      ask_prompt: "Why is my city export missing and how do I fix it?",
-      report_category: "bug",
+      ask_prompt: "Why is my city snapshot missing and how do I fix it?",
     });
   } else if (exportBlock.corrupt) {
     issues.push({
       id: "export_corrupt",
       severity: "error",
-      title: "City export file is unreadable",
+      title: "City snapshot file is unreadable",
       detail: String(exportBlock.error || "The latest.json file could not be parsed."),
       hint: "Re-load your city in CS2 or wait for a new snapshot.",
-      report_category: "bug",
       action_view: "settings",
     });
   }
@@ -445,7 +590,6 @@ function synthesizeIssuesFromStatus(status) {
       title: "Knowledge sources unavailable",
       detail: String(knowledge.error),
       hint: "Reinstall CitiesAI or report this in Feedback.",
-      report_category: "bug",
     });
   } else if (!enc.available) {
     issues.push({
@@ -454,7 +598,6 @@ function synthesizeIssuesFromStatus(status) {
       title: "Game encyclopedia unavailable",
       detail: "Wiki-style answers may be limited until encyclopedia data loads.",
       hint: "Check that your game Locale.cok path is correct in Settings.",
-      report_category: "bug",
       action_view: "settings",
     });
   }
@@ -475,11 +618,16 @@ function issueCountLabel(count) {
   return count === 1 ? "1 issue" : `${count} issues`;
 }
 
-function infoIssueCount(issues) {
-  return issues.filter((i) => i.severity === "info").length;
+function updateIssuesNavLabel(issues) {
+  const btn = $("nav-issues");
+  if (!btn) return;
+  const count = (issues || []).length;
+  btn.textContent = count > 0 ? `Issues (${count})` : "Issues";
+  btn.classList.toggle("has-issues", count > 0);
+  btn.setAttribute("aria-label", count > 0 ? `Issues, ${issueCountLabel(count)}` : "Issues");
 }
 
-function renderHealthStrip(status, blockingCount = 0) {
+function renderHealthStrip(status) {
   const el = $("health-strip");
   el.classList.remove("ok", "warn", "bad", "clickable");
   el.onclick = null;
@@ -487,40 +635,17 @@ function renderHealthStrip(status, blockingCount = 0) {
 
   if (!status) {
     el.textContent = "Status unavailable";
-    el.classList.add("warn", "clickable");
-    el.onclick = () => switchView("issues");
-    return;
-  }
-
-  const exportReady = Boolean(status.export && !status.export.corrupt);
-  const encOk = status.knowledge?.encyclopedia?.available;
-  const notes = infoIssueCount(lastIssues);
-
-  if (status.ok && blockingCount === 0 && notes === 0) {
-    el.textContent = "All systems ready";
-    el.classList.add("ok");
-    el.setAttribute("aria-disabled", "true");
-    return;
-  }
-
-  el.classList.add("clickable");
-  el.onclick = () => switchView("issues");
-
-  if (!exportReady && !encOk && blockingCount > 0) {
-    el.textContent = "Setup needed";
-    el.classList.add("bad");
-    return;
-  }
-
-  if (blockingCount > 0) {
-    el.textContent = issueCountLabel(blockingCount);
     el.classList.add("warn");
     return;
   }
 
-  if (notes > 0) {
-    el.textContent = notes === 1 ? "Ready · 1 note in Issues" : `Ready · ${notes} notes in Issues`;
-    el.classList.add("ok");
+  const exportReady = Boolean(status.export && !status.export.corrupt);
+  const needsSetup = !status.mod_installed || !exportReady;
+
+  if (needsSetup) {
+    el.textContent = "Setup needed";
+    el.classList.add("warn", "clickable");
+    el.onclick = () => switchView("settings");
     return;
   }
 
@@ -533,11 +658,9 @@ function updateAskHelper() {
   const el = $("ask-helper");
   if (!el) return;
   if (llmConfigured) {
-    el.textContent =
-      "Ask anything about your city. Answers combine your live export with Cities Wiki knowledge.";
+    el.textContent = "Grounded in your city snapshot and Cities Wiki.";
   } else {
-    el.textContent =
-      "Stats work without AI. Add a Mistral API key in Settings for answers grounded in your city data and the Cities Wiki.";
+    el.textContent = "Add an API key in Settings for AI answers — stats work without one.";
   }
 }
 
@@ -606,7 +729,8 @@ function metricDefByKey(key) {
   return METRIC_DEFS.find((def) => def.key === key);
 }
 
-function buildMetricCardHtml(def, m, deltas, series) {
+function buildMetricCardHtml(def, m, deltas, series, options = {}) {
+  const sparklineEmptyLabel = options.sparklineEmptyLabel ?? "Collecting…";
   const val = m[def.key];
   const delta = deltas[def.key];
   const formatOpts = { decimals: def.decimals ?? 0 };
@@ -645,7 +769,7 @@ function buildMetricCardHtml(def, m, deltas, series) {
     <div class="metric-delta ${deltaCls}">${formatDelta(delta, deltaOpts)}</div>
     <div class="metric-spark-wrap">
       <svg class="sparkline" viewBox="0 0 160 28" data-key="${def.key}" aria-hidden="true"></svg>
-      ${hasSparkline ? "" : `<span class="sparkline-empty muted small">Collecting…</span>`}
+      ${hasSparkline ? "" : `<span class="sparkline-empty muted small">${sparklineEmptyLabel}</span>`}
     </div>
   </button>`;
 }
@@ -656,55 +780,79 @@ function bindMetricCards() {
   });
 }
 
-function openMetricModal(key, returnFocusEl) {
-  const def = metricDefByKey(key);
-  if (!def || !lastDashboardData?.ok) return;
-
-  metricModalReturnFocus = returnFocusEl || null;
-  const m = lastDashboardData.metrics;
-  const history = lastDashboardData.history || {};
-  const series = history.series || {};
-  const deltas = history.deltas || {};
+function openMetricModalFromSeries(def, ctx, returnFocusEl) {
+  const {
+    metrics,
+    series,
+    timestamps,
+    deltas,
+    sourceLabel,
+    deltaSinceLabel = "since last snapshot",
+  } = ctx;
+  const key = def.key;
   const values = series[key] || [];
-  const timestamps = history.timestamps || [];
   const formatOpts = { decimals: def.decimals ?? 0 };
   const suffix = def.suffix || "";
 
+  metricModalReturnFocus = returnFocusEl || null;
   $("metric-modal-title").textContent = def.label;
   $("metric-modal-desc").textContent = def.description || "";
 
-  let valueRow = `<span class="metric-modal-value">${formatMetricValue(m[def.key], def)}</span>`;
+  let valueRow = `<span class="metric-modal-value">${formatMetricValue(metrics[def.key], def)}</span>`;
   if (def.hourlyKey) {
-    const hourlyText = formatHourlyRate(m[def.hourlyKey], {
+    const hourlyText = formatHourlyRate(metrics[def.hourlyKey], {
       decimals: formatOpts.decimals,
       currency: Boolean(def.hourlyCurrency || def.currency),
     });
     if (hourlyText) {
-      valueRow += `<span class="metric-hourly ${hourlyRateClass(m[def.hourlyKey])}">${hourlyText}</span>`;
+      valueRow += `<span class="metric-hourly ${hourlyRateClass(metrics[def.hourlyKey])}">${hourlyText}</span>`;
     }
   }
   const deltaOpts = { decimals: formatOpts.decimals, currency: Boolean(def.currency) };
   const deltaText = formatDelta(deltas[key], deltaOpts);
   if (deltaText) {
     const deltaCls = deltas[key] > 0 ? "up" : deltas[key] < 0 ? "down" : "";
-    valueRow += `<span class="metric-modal-session-delta ${deltaCls}">${deltaText} since last export</span>`;
+    valueRow += `<span class="metric-modal-session-delta ${deltaCls}">${deltaText} ${deltaSinceLabel}</span>`;
   }
   $("metric-modal-values").innerHTML = valueRow;
 
   const chart = $("metric-modal-chart");
-  const drew = drawDetailChart(chart, { timestamps, values, suffix });
+  const drew = drawDetailChart(chart, {
+    timestamps,
+    values,
+    suffix,
+    currency: Boolean(def.currency),
+  });
   chart.hidden = !drew;
 
-  const count = history.count ?? 0;
-  const span =
-    timestamps.length >= 2 ? formatHistoryDuration(timestamps[timestamps.length - 1] - timestamps[0]) : "";
-  const metaParts = [`Session history · ${count} point${count === 1 ? "" : "s"}`];
-  if (span) metaParts.push(span);
-  if (!drew) metaParts.push("waiting for more exports");
+  const spanSec = historySpanSeconds(timestamps);
+  const metaParts = [sourceLabel];
+  if (spanSec != null) metaParts.push(formatHistoryDuration(spanSec));
+  if (!drew) metaParts.push("waiting for more snapshots");
   $("metric-modal-meta").textContent = metaParts.join(" · ");
 
   $("metric-modal").removeAttribute("hidden");
+  bindModalFocusTrap($("metric-modal"), closeMetricModal);
   $("metric-modal-close").focus();
+}
+
+function openMetricModal(key, returnFocusEl) {
+  const def = metricDefByKey(key);
+  if (!def || !lastDashboardData?.ok) return;
+  const hist = lastDashboardData.historian || {};
+  const count = hist.count ?? 0;
+  openMetricModalFromSeries(
+    def,
+    {
+      metrics: lastDashboardData.metrics,
+      series: hist.series || {},
+      timestamps: hist.timestamps || [],
+      deltas: hist.deltas || {},
+      sourceLabel: `Historian · ${count} snapshot${count === 1 ? "" : "s"}`,
+      deltaSinceLabel: "since prior snapshot",
+    },
+    returnFocusEl
+  );
 }
 
 function closeMetricModal() {
@@ -722,6 +870,7 @@ function openDiagnosticsModal(returnFocusEl) {
   const brief = lastDashboardData?.brief || "";
   $("brief-technical").textContent = brief || "No snapshot loaded yet. Load a city in CS2 with the export mod enabled.";
   $("diagnostics-modal").removeAttribute("hidden");
+  bindModalFocusTrap($("diagnostics-modal"), closeDiagnosticsModal);
   $("diagnostics-modal-close").focus();
 }
 
@@ -735,22 +884,50 @@ function closeDiagnosticsModal() {
   }
 }
 
+function renderDashboardAnomalies(anomalies) {
+  const anomBlock = $("dashboard-anomalies");
+  const anomList = $("dashboard-anomalies-list");
+  if (!anomBlock || !anomList) return;
+  if (anomalies.length) {
+    anomBlock.hidden = false;
+    anomList.innerHTML = anomalies.map((a) =>
+      `<li class="finding-row insight-anomaly-row">
+        <div class="finding-copy"><strong>${escapeHtml(a.title)}</strong> — ${escapeHtml(a.detail)}</div>
+        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(a.ask_prompt || a.title)}">Ask</button>
+      </li>`
+    ).join("");
+    anomList.querySelectorAll(".insight-ask").forEach((btn) => {
+      btn.addEventListener("click", () => askFromPrompt(btn.dataset.prompt));
+    });
+  } else {
+    anomBlock.hidden = true;
+    anomList.innerHTML = "";
+  }
+}
+
 function renderDashboard(data) {
   const grid = $("metric-grid");
   if (!data.ok) {
     lastDashboardData = data;
     $("hero-title").textContent = "No city data yet";
     $("hero-sub").textContent = data.hint || data.error || "";
-    $("freshness-pill").textContent = "No export";
+    $("freshness-pill").textContent = "No snapshot";
     $("freshness-pill").className = "pill missing";
-    grid.innerHTML = `<div class="skeleton"></div>`.repeat(METRIC_DEFS.length);
+    grid.innerHTML = `<div class="dashboard-error card">
+      <p><strong>${escapeHtml(data.error || "Dashboard unavailable")}</strong></p>
+      <p class="muted">${escapeHtml(data.hint || "Load a city in CS2 with CS2 Data Export enabled.")}</p>
+    </div>`;
     $("brief-technical").textContent = "";
+    const metaEl = $("dashboard-meta");
+    if (metaEl) metaEl.textContent = "";
+    renderDashboardAnomalies([]);
     return;
   }
 
   lastDashboardData = data;
   const m = data.metrics;
   const meta = data.meta;
+  const hist = data.historian || {};
   $("hero-title").textContent = m.city_name || "Your city";
   const date =
     m.game_year != null ? `Year ${m.game_year}, month ${m.game_month ?? "?"}` : "In-game date unknown";
@@ -766,16 +943,71 @@ function renderDashboard(data) {
     pill.className = "pill fresh";
   }
 
-  const deltas = (data.history && data.history.deltas) || {};
-  const series = (data.history && data.history.series) || {};
-  grid.innerHTML = METRIC_DEFS.map((def) => buildMetricCardHtml(def, m, deltas, series)).join("");
+  const deltas = hist.deltas || {};
+  const series = hist.series || {};
+  grid.innerHTML = METRIC_DEFS.map((def) =>
+    buildMetricCardHtml(def, m, deltas, series, { sparklineEmptyLabel: "No data in range" })
+  ).join("");
 
+  const metaEl = $("dashboard-meta");
+  if (metaEl) {
+    const count = hist.count ?? 0;
+    const spanSec = historySpanSeconds(hist.timestamps);
+    const metaParts = [`${count} snapshot${count === 1 ? "" : "s"} in range`];
+    if (spanSec != null) metaParts.push(formatHistoryDuration(spanSec));
+    metaEl.textContent = metaParts.join(" · ");
+  }
+
+  const forecastData = data.forecasts?.forecasts || {};
   grid.querySelectorAll(".sparkline").forEach((svg) => {
-    drawSparkline(svg, series[svg.dataset.key]);
+    const key = svg.dataset.key;
+    drawSparkline(svg, series[key], forecastData[key]?.projected);
   });
   bindMetricCards();
 
   $("brief-technical").textContent = data.brief || "";
+
+  const digestEl = $("session-digest");
+  const digest = data.session_digest;
+  if (digest && digest.has_changes && digest.summary && digest.summary.length) {
+    digestEl.hidden = false;
+    digestEl.innerHTML = `<strong>Since last session:</strong> ${digest.summary.map((s) => escapeHtml(s)).join(" · ")}`;
+  } else {
+    digestEl.hidden = true;
+    digestEl.innerHTML = "";
+  }
+
+  const cardStrip = $("report-card-strip");
+  const card = data.report_card;
+  if (card && card.domains) {
+    cardStrip.hidden = false;
+    cardStrip.innerHTML =
+      `<button type="button" class="report-overall ${gradeClass(card.overall_grade)}" title="Open Insights">Overall ${escapeHtml(card.overall_grade)}</button>` +
+      card.domains
+        .map(
+          (d) =>
+            `<button type="button" class="report-domain ${gradeClass(d.grade)}" title="${escapeAttr(d.detail || "")}">${escapeHtml(d.label)} ${escapeHtml(d.grade)}</button>`
+        )
+        .join("");
+    cardStrip.onclick = (e) => {
+      if (e.target.closest("button")) switchView("insights");
+    };
+  } else {
+    cardStrip.hidden = true;
+    cardStrip.innerHTML = "";
+  }
+
+  const forecastEl = $("forecast-alerts");
+  const alerts = (data.forecasts && data.forecasts.alerts) || [];
+  if (alerts.length) {
+    forecastEl.hidden = false;
+    forecastEl.innerHTML = alerts.map((a) => `<span class="forecast-pill">${escapeHtml(a)}</span>`).join("");
+  } else {
+    forecastEl.hidden = true;
+    forecastEl.innerHTML = "";
+  }
+
+  renderDashboardAnomalies(data.anomalies || []);
 
   if (!$("metric-modal").hasAttribute("hidden") && metricModalReturnFocus) {
     openMetricModal(metricModalReturnFocus.dataset.metricKey, metricModalReturnFocus);
@@ -783,34 +1015,29 @@ function renderDashboard(data) {
 }
 
 function renderIssueCard(issue) {
+  const severityLabel =
+    issue.severity === "error" ? "Error" : issue.severity === "warn" ? "Warning" : "Note";
+  const detailParts = [issue.detail];
+  if (issue.hint) detailParts.push(issue.hint);
+  const detailText = detailParts.filter(Boolean).join(" — ");
+
   const actions = [];
   if (issue.ask_prompt) {
     actions.push(
-      `<button type="button" class="btn secondary btn-sm issue-ask" data-prompt="${escapeAttr(issue.ask_prompt)}">Ask about this</button>`
+      `<button type="button" class="btn ghost btn-sm insight-ask issue-ask" data-prompt="${escapeAttr(issue.ask_prompt)}">Ask</button>`
     );
   }
   if (issue.action_view === "settings") {
-    actions.push(`<button type="button" class="btn secondary btn-sm issue-settings">Open Settings</button>`);
+    actions.push(`<button type="button" class="btn ghost btn-sm issue-settings">Settings</button>`);
   }
-  actions.push(
-    `<button type="button" class="btn ghost btn-sm issue-report" data-category="${escapeAttr(issue.report_category || "general")}" data-title="${escapeAttr(issue.title)}" data-issue-id="${escapeAttr(issue.id)}">Report</button>`
-  );
 
-  const severityLabel =
-    issue.severity === "error" ? "Error" : issue.severity === "warn" ? "Warning" : "Note";
-  const hintHtml = issue.hint
-    ? `<p class="issue-hint muted small">${escapeHtml(issue.hint)}</p>`
-    : "";
-
-  return `<article class="issue-card severity-${issue.severity}">
-    <div class="issue-stripe"></div>
-    <div class="issue-body">
-      <p class="issue-severity muted small">${severityLabel}</p>
-      <h3>${escapeHtml(issue.title)}</h3>
-      <p>${escapeHtml(issue.detail)}</p>
-      ${hintHtml}
-      ${actions.length ? `<div class="issue-actions">${actions.join("")}</div>` : ""}
+  return `<article class="issue-card severity-${escapeAttr(issue.severity)}">
+    <div class="issue-card-head">
+      <span class="issue-pill">${severityLabel}</span>
+      <strong class="issue-title">${escapeHtml(issue.title)}</strong>
     </div>
+    <p class="issue-detail muted small">${escapeHtml(detailText)}</p>
+    ${actions.length ? `<div class="issue-card-actions">${actions.join("")}</div>` : ""}
   </article>`;
 }
 
@@ -830,35 +1057,22 @@ function renderIssues(issues) {
 
   if (cityIssues.length) {
     sections.push(
-      `<div class="issues-section"><h2 class="issues-section-title">Your city</h2>${cityIssues.map((issue) => renderIssueCard(issue)).join("")}</div>`
+      `<div class="issues-section"><h2 class="issues-section-title">Your city <span class="issues-section-count">${cityIssues.length}</span></h2><div class="issue-stack">${cityIssues.map((issue) => renderIssueCard(issue)).join("")}</div></div>`
     );
   }
   if (setupIssues.length) {
     sections.push(
-      `<div class="issues-section"><h2 class="issues-section-title">Setup &amp; app</h2>${setupIssues.map((issue) => renderIssueCard(issue)).join("")}</div>`
+      `<div class="issues-section"><h2 class="issues-section-title">Setup &amp; app <span class="issues-section-count">${setupIssues.length}</span></h2><div class="issue-stack">${setupIssues.map((issue) => renderIssueCard(issue)).join("")}</div></div>`
     );
   }
 
   list.innerHTML = sections.join("");
 
   list.querySelectorAll(".issue-ask").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      $("question").value = btn.dataset.prompt;
-      switchView("ask");
-      $("question").focus();
-    });
+    btn.addEventListener("click", () => askFromPrompt(btn.dataset.prompt));
   });
   list.querySelectorAll(".issue-settings").forEach((btn) => {
     btn.addEventListener("click", () => switchView("settings"));
-  });
-  list.querySelectorAll(".issue-report").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      switchView("feedback", {
-        category: btn.dataset.category,
-        message: `Issue: ${btn.dataset.title}\n\n`,
-        issueId: btn.dataset.issueId,
-      });
-    });
   });
 }
 
@@ -908,17 +1122,32 @@ async function loadDashboard() {
   if (refreshInFlight) return;
   refreshInFlight = true;
   try {
-    const data = await fetchJson("/api/dashboard");
+    const limit = Number($("dashboard-range")?.value || 1000);
+    const data = await fetchJson(`/api/dashboard?limit=${limit}`);
+    pollErrorActive = false;
     renderDashboard(data);
-    await refreshIssues();
-    await renderSuggestions();
+    if (Array.isArray(data.issues)) {
+      lastIssues = data.issues;
+      updateIssuesNavLabel(lastIssues);
+      const fp = issuesFingerprint(lastIssues);
+      if (fp !== lastIssuesFingerprint) {
+        lastIssuesFingerprint = fp;
+        await renderSuggestions();
+      }
+      if ($("view-issues").classList.contains("active")) {
+        renderIssues(lastIssues);
+      }
+    } else {
+      await refreshIssues();
+      await renderSuggestions();
+    }
   } catch (err) {
     renderDashboard({
       ok: false,
       error: "Could not refresh dashboard",
       hint: String(err.message || err),
     });
-    toast(String(err.message || err), "err");
+    if (!pollErrorActive) toast(String(err.message || err), "err");
   } finally {
     refreshInFlight = false;
   }
@@ -935,12 +1164,12 @@ async function loadStatus({ promptOnboarding = false } = {}) {
 
     if (Array.isArray(status.issues)) {
       lastIssues = status.issues;
+      updateIssuesNavLabel(lastIssues);
       if ($("view-issues").classList.contains("active")) {
         renderIssues(lastIssues);
       }
     }
-    const blocking = status.blocking_count ?? blockingIssueCount(lastIssues);
-    renderHealthStrip(status, blocking);
+    renderHealthStrip(status);
     updateFeedbackIssuesLink();
 
     if (promptOnboarding && !onboardingDismissed && !status.onboarding_complete) {
@@ -949,7 +1178,7 @@ async function loadStatus({ promptOnboarding = false } = {}) {
     return status;
   } catch (err) {
     renderHealthStrip(null);
-    toast(String(err.message || err), "err");
+    if (!pollErrorActive) toast(String(err.message || err), "err");
     return null;
   } finally {
     statusRefreshInFlight = false;
@@ -995,7 +1224,7 @@ function appendBubble(role, html) {
   div.className = `bubble ${role}`;
   div.innerHTML = html;
   log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
+  scrollChatToBottom();
   updateAskWelcome();
   return div;
 }
@@ -1005,7 +1234,7 @@ function loadChatHistory() {
     const raw = localStorage.getItem("citiesai-chat");
     if (!raw) return;
     JSON.parse(raw).forEach((entry) => {
-      appendBubble("user", entry.q);
+      appendBubble("user", escapeHtml(entry.q || ""));
       if (entry.a) appendBubble("assistant", renderMarkdown(entry.a));
     });
     updateAskWelcome();
@@ -1071,7 +1300,12 @@ function resetAskSubmit() {
 
 async function askStream(question) {
   appendBubble("user", escapeHtml(question));
-  const assistant = appendBubble("assistant", typingIndicatorHtml());
+  const assistant = appendBubble(
+    "assistant",
+    `<div class="ask-answer">${typingIndicatorHtml()}</div><div class="ask-sources-wrap"></div>`
+  );
+  const answerEl = assistant.querySelector(".ask-answer");
+  const sourcesEl = assistant.querySelector(".ask-sources-wrap");
   let answer = "";
   let streamFailed = false;
   let streamFinished = false;
@@ -1085,6 +1319,7 @@ async function askStream(question) {
     if (streamFinished) return;
     streamFinished = true;
     resetAskSubmit();
+    scrollChatToBottom("smooth");
     if (bodyReader && typeof bodyReader.cancel === "function") {
       bodyReader.cancel().catch(() => {});
     }
@@ -1092,26 +1327,47 @@ async function askStream(question) {
 
   const handlers = {
     onEvent(event, payload) {
+      if (event === "status") {
+        if (answerEl) answerEl.innerHTML = typingIndicatorHtml(payload.text || "");
+        scrollChatToBottom();
+      }
+      if (event === "sources" && payload.sources && payload.sources.length && sourcesEl) {
+        const items = payload.sources.slice(0, 8).map((s) => {
+          const label = s.title || s.tool || s.source || "source";
+          const href = safeHttpUrl(s.url);
+          if (href) {
+            return `<li><a href="${escapeAttr(href)}" target="_blank" rel="noopener">${escapeHtml(label)}</a></li>`;
+          }
+          return `<li>${escapeHtml(label)}</li>`;
+        });
+        sourcesEl.innerHTML = `<details class="ask-sources"><summary>Sources (${payload.sources.length})</summary><ul>${items.join("")}</ul></details>`;
+        scrollChatToBottom();
+      }
       if (event === "token") {
         answer += payload.text || "";
-        assistant.innerHTML = renderMarkdown(answer);
-        $("chat-log").scrollTop = $("chat-log").scrollHeight;
+        if (answerEl) answerEl.innerHTML = renderMarkdown(answer);
+        scrollChatToBottom();
       }
       if (event === "error") {
         streamFailed = true;
         answer = "";
         const hint = payload.hint ? `<p class="muted small">${escapeHtml(payload.hint)}</p>` : "";
-        assistant.innerHTML = `<span class="muted">${escapeHtml(payload.error || "Ask failed")}</span>${hint}`;
-        if (payload.mode === "bundle" && payload.bundle) {
-          assistant.innerHTML += `<details><summary>Retrieval bundle</summary><pre class="mono-block">${escapeHtml(payload.bundle)}</pre></details>`;
+        if (answerEl) {
+          answerEl.innerHTML = `<span class="muted">${escapeHtml(payload.error || "Ask failed")}</span>${hint}`;
         }
+        if (payload.mode === "bundle" && payload.bundle && answerEl) {
+          answerEl.innerHTML += `<details><summary>Retrieval bundle</summary><pre class="mono-block">${escapeHtml(payload.bundle)}</pre></details>`;
+        }
+        scrollChatToBottom();
         finishStream();
       }
       if (event === "done") {
         if (!answer.trim()) {
           streamFailed = true;
-          assistant.innerHTML =
-            `<span class="muted">No answer returned. Check Settings for your API key or try again.</span>`;
+          if (answerEl) {
+            answerEl.innerHTML =
+              `<span class="muted">No answer returned. Check Settings for your API key or try again.</span>`;
+          }
         }
         finishStream();
       }
@@ -1168,9 +1424,118 @@ async function askStream(question) {
       err.name === "TimeoutError"
         ? "Ask timed out. Check your connection or API key and try again."
         : String(err.message || err);
-    assistant.innerHTML = `<span class="muted">${escapeHtml(message)}</span>`;
+    if (answerEl) {
+      answerEl.innerHTML = `<span class="muted">${escapeHtml(message)}</span>`;
+    }
+    scrollChatToBottom();
   } finally {
     finishStream();
+  }
+}
+
+async function loadInsights() {
+  const root = $("insights-content");
+  root.innerHTML = `<div class="skeleton"></div>`.repeat(3);
+  try {
+    const data = await fetchJson("/api/insights");
+    if (!data.ok) {
+      root.innerHTML = `<p class="muted">${escapeHtml(data.error || "No insights yet")}</p>`;
+      return;
+    }
+    const card = data.report_card;
+    const transit = data.transit;
+    const housing = data.housing;
+    const budget = data.budget;
+    const anomalies = data.anomalies || [];
+
+    const domainHtml = card.domains.map((d) => {
+      const delta = d.grade_delta ? ` <span class="muted small">${escapeHtml(d.grade_delta)}</span>` : "";
+      const ask = d.ask_prompt
+        ? `<button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(d.ask_prompt)}">Ask</button>`
+        : "";
+      return `<div class="insight-domain ${gradeClass(d.grade)}">
+        <div class="insight-domain-head">
+          <div class="insight-domain-meta"><strong>${escapeHtml(d.label)}</strong> <span class="insight-domain-grade">${escapeHtml(d.grade)}</span>${delta}</div>
+        </div>
+        <p class="insight-domain-detail muted small">${escapeHtml(d.detail || "")}</p>
+        ${ask ? `<div class="insight-domain-actions">${ask}</div>` : ""}
+      </div>`;
+    }).join("");
+
+    const transitRows = (transit.lines || []).map((l) =>
+      `<tr class="severity-${escapeAttr(l.severity)}">
+        <td>${escapeHtml(l.line_name)}</td>
+        <td>${escapeHtml(l.mode)}</td>
+        <td>${escapeHtml(l.severity)}</td>
+        <td>${escapeHtml(l.diagnosis)}</td>
+        <td><button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(l.ask_prompt || `How can I improve line ${l.line_name}?`)}">Ask</button></td>
+      </tr>`
+    ).join("");
+
+    const findingHtml = (items) => (items || []).map((f) =>
+      `<li class="finding-row severity-${escapeAttr(f.severity || "info")}">
+        <div class="finding-copy">
+          <strong>${escapeHtml(f.title)}</strong> — ${escapeHtml(f.detail)}
+          ${f.action ? `<p class="muted small">${escapeHtml(f.action)}</p>` : ""}
+        </div>
+        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(f.ask_prompt || `What should I do about: ${f.title}?`)}">Ask</button>
+      </li>`
+    ).join("");
+
+    const anomalyHtml = anomalies.map((a) =>
+      `<li class="finding-row insight-anomaly-row">
+        <div class="finding-copy"><strong>${escapeHtml(a.title)}</strong> — ${escapeHtml(a.detail)}</div>
+        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(a.ask_prompt || a.title)}">Ask</button>
+      </li>`
+    ).join("");
+
+    root.innerHTML = `
+      <article class="card">
+        <h2>Report card — ${escapeHtml(card.overall_grade)} (${card.overall_score}/100)</h2>
+        <div class="insights-domains">${domainHtml}</div>
+      </article>
+      ${anomalies.length ? `<article class="card"><h2>Anomalies</h2><ul class="finding-list">${anomalyHtml}</ul></article>` : ""}
+      <article class="card">
+        <h2>Transit doctor</h2>
+        <p class="muted">${escapeHtml(transit.summary || "")}</p>
+        <div class="insights-table-wrap"><table class="insights-table"><thead><tr><th>Line</th><th>Mode</th><th>Status</th><th>Diagnosis</th><th></th></tr></thead><tbody>${transitRows || `<tr><td colspan="5" class="muted">No line detail</td></tr>`}</tbody></table></div>
+      </article>
+      <article class="card">
+        <h2>Housing &amp; labor</h2>
+        <ul class="finding-list">${findingHtml(housing.findings) || "<li class='muted'>Balanced</li>"}</ul>
+      </article>
+      <article class="card">
+        <h2>Budget</h2>
+        <p>${escapeHtml(budget.summary || "")}</p>
+        <ul class="finding-list">${findingHtml(budget.findings)}</ul>
+      </article>`;
+
+    root.querySelectorAll(".insight-ask").forEach((btn) => {
+      btn.addEventListener("click", () => askFromPrompt(btn.dataset.prompt));
+    });
+  } catch (err) {
+    root.innerHTML = `<p class="muted">${escapeHtml(String(err.message || err))}</p>`;
+  }
+}
+
+async function initWatchToggle() {
+  const checkbox = $("watch-enabled");
+  if (!checkbox || watchToggleTouched) return;
+  try {
+    const data = await fetchJson("/api/watch");
+    checkbox.checked = Boolean(data.enabled);
+  } catch { /* ignore */ }
+}
+
+function updateKeyHint(provider) {
+  const hint = $("key-hint");
+  if (!hint) return;
+  if (provider === "local") {
+    hint.textContent = "Local Ollama/LM Studio: use any placeholder or leave empty if the server needs no key.";
+  } else if (provider === "openai") {
+    hint.textContent = "Set OPENAI_API_KEY in Settings or your environment.";
+  } else {
+    hint.textContent = "Required for Mistral. Get a free key at console.mistral.ai";
   }
 }
 
@@ -1186,6 +1551,19 @@ async function loadSettings() {
     setPathTitle($("setup-locale"), data.locale_cok);
     setPathTitle($("setup-export"), data.export_path);
     $("setup-model").value = data.llm_model || "mistral-medium-latest";
+    try {
+      const presets = await fetchJson("/api/settings/llm-presets");
+      const providerSelect = $("setup-provider");
+      if (providerSelect && presets.presets) {
+        providerSelect.value = data.llm_provider || "mistral";
+        updateKeyHint(providerSelect.value);
+        providerSelect.onchange = () => {
+          const preset = presets.presets[providerSelect.value];
+          if (preset) $("setup-model").value = preset.model;
+          updateKeyHint(providerSelect.value);
+        };
+      }
+    } catch { /* ignore */ }
     const modBadge = $("mod-status");
     modBadge.textContent = data.mod_installed ? "Installed" : "Not installed";
     modBadge.className = `status-badge ${data.mod_installed ? "ok" : "missing"}`;
@@ -1260,10 +1638,10 @@ async function waitForExport() {
     try {
       const dash = await fetchJson("/api/dashboard");
       if (dash.ok && !dash.meta.stale) {
-        el.textContent = "Export received!";
+        el.textContent = "Snapshot received!";
         clearInterval(exportPollTimer);
       } else if (dash.ok) {
-        el.textContent = "Export found but stale. Load your city in CS2.";
+        el.textContent = "Snapshot found but stale. Load your city in CS2.";
       } else {
         el.textContent = "Still waiting… load a city with the mod enabled.";
       }
@@ -1276,6 +1654,7 @@ async function waitForExport() {
 function showOnboarding() {
   onboardingStep = 0;
   $("onboarding").removeAttribute("hidden");
+  bindModalFocusTrap($("onboarding"), hideOnboarding);
   renderOnboardingStep();
   $("onboarding-next").focus();
 }
@@ -1332,7 +1711,6 @@ document.querySelectorAll("[data-view-jump]").forEach((btn) => {
   btn.addEventListener("click", () => switchView(btn.dataset.viewJump));
 });
 
-$("refresh-dashboard").addEventListener("click", loadDashboard);
 
 $("ask-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1367,10 +1745,36 @@ $("question").addEventListener("input", () => {
   autoGrowTextarea($("question"));
 });
 
-$("clear-chat").addEventListener("click", () => {
+$("clear-chat").addEventListener("click", async () => {
   $("chat-log").innerHTML = "";
   localStorage.removeItem("citiesai-chat");
+  try {
+    await fetchJson("/api/chat/clear", { method: "POST", body: "{}" });
+  } catch { /* ignore */ }
   updateAskWelcome();
+});
+
+$("export-report")?.addEventListener("click", async () => {
+  try {
+    const data = await fetchJson("/api/report/export", { method: "POST", body: "{}" });
+    toast(`Report saved: ${data.path}`, "ok");
+  } catch (err) {
+    toast(String(err.message || err), "err");
+  }
+});
+
+$("watch-enabled")?.addEventListener("change", async (e) => {
+  watchToggleTouched = true;
+  try {
+    await fetchJson("/api/watch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: e.target.checked }),
+    });
+    toast(e.target.checked ? "Desktop notifications on" : "Desktop notifications off", "ok");
+  } catch (err) {
+    toast(String(err.message || err), "err");
+  }
 });
 
 $("save-setup").addEventListener("click", async () => {
@@ -1383,6 +1787,7 @@ $("save-setup").addEventListener("click", async () => {
         locale_cok: $("setup-locale").value.trim(),
         export_path: $("setup-export").value.trim(),
         llm_model: $("setup-model").value.trim(),
+        llm_provider: $("setup-provider")?.value || "mistral",
       }),
     });
     toast(`Saved ${data.config_path}`, "ok");
@@ -1466,7 +1871,6 @@ $("feedback-form").addEventListener("submit", async (e) => {
         message: $("feedback-message").value,
         contact: $("feedback-contact").value,
         attach_system_info: $("feedback-system").checked,
-        context_issue_id: feedbackContextIssueId || undefined,
       }),
     });
     const msg =
@@ -1484,7 +1888,6 @@ $("feedback-form").addEventListener("submit", async (e) => {
     success.innerHTML = `<span class="feedback-success-icon">✓</span><p>${escapeHtml(msg)}</p>`;
     $("feedback-message").value = "";
     $("feedback-contact").value = "";
-    feedbackContextIssueId = "";
     toast("Feedback sent", "ok");
   } catch (err) {
     toast(String(err.message || err), "err");
@@ -1552,6 +1955,8 @@ $("open-diagnostics").addEventListener("click", () => {
   openDiagnosticsModal($("open-diagnostics"));
 });
 
+$("dashboard-range")?.addEventListener("change", () => void loadDashboard());
+
 async function init() {
   try {
     const ver = await fetchJson("/api/version");
@@ -1564,9 +1969,14 @@ async function init() {
   setFeedbackCategory($("feedback-category").value);
   await loadStatus({ promptOnboarding: true });
   await loadDashboard();
+  void initWatchToggle();
   dashboardTimer = setInterval(async () => {
     await loadDashboard();
-    await loadStatus();
+    statusPollCounter += 1;
+    if (statusPollCounter >= STATUS_POLL_INTERVALS) {
+      statusPollCounter = 0;
+      await loadStatus();
+    }
   }, POLL_MS);
 }
 

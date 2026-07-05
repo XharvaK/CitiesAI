@@ -5,23 +5,38 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from ..ask_core import build_ask_bundle, meta_to_dict, run_ask
+from ..analyzers import analyze_budget, analyze_housing_labor, analyze_transit_lines
+from ..ask_core import build_ask_bundle, collect_sources_for_queries, meta_to_dict, run_ask
 from ..city_issues import detect_city_issues
-from ..config import config_path, load_config, merge_discovered, set_onboarding_complete
+from ..config import config_dir, config_path, load_config, merge_discovered, set_onboarding_complete
+from ..constants import HISTORY_MAX_POINTS
+from ..conversation import get_conversation
 from ..dashboard import extract_headline_metrics
 from ..discovery import discover_paths
 from ..env_store import clear_env_var, save_env_var
 from ..feedback import submit_feedback
+from ..forecasts import build_forecasts
+from ..historian import get_historian
 from ..issues import blocking_issue_count, collect_issues
-from ..llm import resolve_llm_settings, stream_answer, test_api_key
+from ..keywords import build_search_queries
+from ..llm import (
+    LLM_PRESETS,
+    iter_agentic_answer,
+    resolve_llm_settings,
+    stream_answer,
+    stream_text_chunks,
+    test_api_key,
+)
 from ..mod_install import install_mod, mod_installed
+from ..report_html import write_report_file
+from ..report_ops import build_and_persist_report_card
 from ..setup_wizard import save_detected_config
 from ..snapshot import load_snapshot_safe, snapshot_meta
-from ..snapshot_history import get_history
 from ..status import collect_status_report
 from ..suggestions import build_ask_suggestions
 from ..summary import build_city_brief
 from ..version import __version__
+from ..watch import get_watch_service
 
 
 def api_version() -> dict[str, Any]:
@@ -101,7 +116,7 @@ def api_suggestions() -> dict[str, Any]:
     }
 
 
-def api_dashboard() -> dict[str, Any]:
+def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
     cfg = load_config()
     export_path = cfg.resolved_export_path()
     if not export_path.is_file():
@@ -118,20 +133,26 @@ def api_dashboard() -> dict[str, Any]:
             "hint": "Re-load your city in CS2 or delete the corrupt latest.json and wait for a new snapshot.",
             "detail": err,
         }
-    get_history().refresh()
     meta = snapshot_meta(snapshot, path=export_path)
+    historian = get_historian()
+    historian.sync(export_path)
+    hist = historian.get_history(export_path=export_path, limit=limit)
+    report_card = build_and_persist_report_card(snapshot, meta, historian=historian)
+    forecasts = build_forecasts(hist)
+    digest = historian.session_digest(history=hist)
+    issues = detect_city_issues(snapshot)
     return {
         "ok": True,
         "meta": meta_to_dict(meta),
         "metrics": extract_headline_metrics(snapshot, meta),
-        "history": get_history().to_dict(),
+        "historian": hist,
+        "anomalies": historian.detect_anomalies(history=hist),
         "brief": build_city_brief(snapshot, meta),
+        "report_card": report_card,
+        "forecasts": forecasts,
+        "session_digest": digest,
+        "issues": issues,
     }
-
-
-def api_history() -> dict[str, Any]:
-    get_history().refresh()
-    return {"ok": True, **get_history().to_dict()}
 
 
 def api_ask(body: dict[str, Any]) -> dict[str, Any]:
@@ -173,22 +194,52 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
 
     try:
         meta = snapshot_meta(snapshot, path=export_path)
+        brief = build_city_brief(snapshot, meta)
+        queries = build_search_queries(snapshot, question)
+        sources = collect_sources_for_queries(queries, limit=limit)
         bundle = build_ask_bundle(snapshot, meta, question, limit=limit)
     except Exception as exc:  # noqa: BLE001 - surface to SSE client
         yield _sse_event("error", {"error": str(exc)})
         return
 
     yield _sse_event("meta", {"question": question, "meta": meta_to_dict(meta)})
+    yield _sse_event("sources", {"sources": sources})
     yield _sse_event("bundle", {"bundle": bundle})
 
     if not bool(body.get("use_llm", True)):
         yield _sse_event("done", {"mode": "bundle"})
         return
 
+    cfg = load_config()
+    agentic = bool(body.get("agentic", True))
     try:
-        for chunk in stream_answer(bundle, cfg=cfg):
-            yield _sse_event("token", {"text": chunk})
-        yield _sse_event("done", {"mode": "llm"})
+        if agentic:
+            conv = get_conversation()
+            conv.set_city_header(brief)
+            result = None
+            for kind, payload in iter_agentic_answer(
+                question,
+                city_brief=brief,
+                snapshot=snapshot,
+                cfg=cfg,
+                history_messages=conv.messages_for_llm(),
+            ):
+                if kind == "status":
+                    yield _sse_event("status", {"text": str(payload)})
+                elif kind == "result":
+                    result = payload
+            if result is None:
+                raise RuntimeError("Agentic loop produced no answer.")
+            answer = result.answer
+            conv.add_turn("user", question)
+            conv.add_turn("assistant", answer, sources=sources)
+            for chunk in stream_text_chunks(answer):
+                yield _sse_event("token", {"text": chunk})
+            yield _sse_event("done", {"mode": "llm", "agentic": True, "tool_calls": result.tool_calls})
+        else:
+            for chunk in stream_answer(bundle, cfg=cfg):
+                yield _sse_event("token", {"text": chunk})
+            yield _sse_event("done", {"mode": "llm", "agentic": False})
     except RuntimeError as exc:
         yield _sse_event("error", {"error": str(exc), "mode": "bundle", "bundle": bundle})
     except Exception as exc:  # noqa: BLE001 - surface to SSE client
@@ -210,6 +261,7 @@ def api_setup_preview() -> dict[str, Any]:
         "locale_cok": str(discovered.locale_cok) if discovered.locale_cok else None,
         "export_path": str(discovered.export_path),
         "llm_model": cfg.llm_model,
+        "llm_provider": cfg.llm_provider,
         "llm_api_key_env": cfg.llm_api_key_env,
         "llm_configured": llm is not None,
         "config_exists": config_path().is_file(),
@@ -226,7 +278,12 @@ def api_setup_save(body: dict[str, Any] | None = None) -> dict[str, Any]:
         if raw:
             overrides[key] = Path(str(raw)).expanduser()
     model = body.get("llm_model")
-    written = save_detected_config(path_overrides=overrides or None, llm_model=str(model) if model else None)
+    provider = body.get("llm_provider")
+    written = save_detected_config(
+        path_overrides=overrides or None,
+        llm_model=str(model) if model else None,
+        llm_provider=str(provider) if provider else None,
+    )
     return {"ok": True, "config_path": str(written)}
 
 
@@ -262,3 +319,75 @@ def api_feedback(body: dict[str, Any]) -> dict[str, Any]:
         attach_system_info=bool(body.get("attach_system_info", False)),
         context_issue_id=str(body.get("context_issue_id", "")).strip() or None,
     )
+
+
+def api_insights() -> dict[str, Any]:
+    cfg = load_config()
+    export_path = cfg.resolved_export_path()
+    if not export_path.is_file():
+        return {"ok": False, "error": "No city export yet"}
+    snapshot, err = load_snapshot_safe(export_path)
+    if snapshot is None:
+        return {"ok": False, "error": err or "Unreadable export"}
+    meta = snapshot_meta(snapshot, path=export_path)
+    historian = get_historian()
+    historian.sync(export_path)
+    hist = historian.get_history(export_path=export_path, limit=HISTORY_MAX_POINTS)
+    return {
+        "ok": True,
+        "report_card": build_and_persist_report_card(snapshot, meta, historian=historian),
+        "transit": analyze_transit_lines(snapshot),
+        "housing": analyze_housing_labor(snapshot),
+        "budget": analyze_budget(snapshot),
+        "anomalies": historian.detect_anomalies(history=hist),
+    }
+
+
+def api_watch_status() -> dict[str, Any]:
+    service = get_watch_service()
+    return {"ok": True, "enabled": service.is_running()}
+
+
+def api_watch_toggle(body: dict[str, Any]) -> dict[str, Any]:
+    enabled = bool(body.get("enabled", True))
+    service = get_watch_service()
+    if enabled:
+        service.start()
+    else:
+        service.stop()
+    return {"ok": True, "enabled": enabled}
+
+
+def api_clear_chat(_body: dict[str, Any] | None = None) -> dict[str, Any]:
+    get_conversation().clear()
+    return {"ok": True}
+
+
+def api_export_report(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = body or {}
+    cfg = load_config()
+    export_path = cfg.resolved_export_path()
+    if not export_path.is_file():
+        return {"ok": False, "error": "No city export yet"}
+    snapshot, err = load_snapshot_safe(export_path)
+    if snapshot is None:
+        return {"ok": False, "error": err or "Unreadable export"}
+    meta = snapshot_meta(snapshot, path=export_path)
+    reports_dir = (config_dir() / "reports").resolve()
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    raw_out = str(body.get("output", "")).strip()
+    if raw_out:
+        out = Path(raw_out).expanduser().resolve()
+        try:
+            out.relative_to(reports_dir)
+        except ValueError:
+            return {"ok": False, "error": f"Output must be under {reports_dir}"}
+    else:
+        stamp = meta.exported_at_utc.replace(":", "-") if meta.exported_at_utc else "latest"
+        out = reports_dir / f"citiesai-report-{stamp}.html"
+    written = write_report_file(snapshot, meta, out)
+    return {"ok": True, "path": str(written)}
+
+
+def api_llm_presets() -> dict[str, Any]:
+    return {"ok": True, "presets": LLM_PRESETS}

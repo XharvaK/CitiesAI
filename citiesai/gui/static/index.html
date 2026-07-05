@@ -78,7 +78,9 @@
 
         <button type="button" class="nav-item active" data-view="dashboard" aria-current="page">Dashboard</button>
 
-        <button type="button" class="nav-item" data-view="issues">Issues</button>
+        <button type="button" class="nav-item" data-view="insights">Insights</button>
+
+        <button type="button" class="nav-item" data-view="issues" id="nav-issues">Issues</button>
 
         <button type="button" class="nav-item" data-view="ask">Ask</button>
 
@@ -110,23 +112,65 @@
 
             <h1 id="hero-title">Your city</h1>
 
-            <p id="hero-sub" class="muted">Waiting for export…</p>
+            <p id="hero-sub" class="muted">Waiting for snapshot…</p>
+            <p id="dashboard-meta" class="muted small"></p>
 
           </div>
 
           <div class="hero-actions">
 
+            <label class="field-inline">Range
+              <select id="dashboard-range" class="control select-control">
+                <option value="36">Last hour</option>
+                <option value="120">Session</option>
+                <option value="1000" selected>All points</option>
+              </select>
+            </label>
+
             <span id="freshness-pill" class="pill">...</span>
 
             <button type="button" id="open-diagnostics" class="btn ghost btn-sm">Diagnostics</button>
-
-            <button type="button" id="refresh-dashboard" class="btn secondary">Refresh</button>
 
           </div>
 
         </header>
 
+        <div id="session-digest" class="digest-banner" hidden></div>
+
+        <div id="report-card-strip" class="report-card-strip" hidden></div>
+
+        <div id="forecast-alerts" class="forecast-alerts" hidden></div>
+
         <div id="metric-grid" class="metric-grid"></div>
+
+        <div id="dashboard-anomalies" class="card dashboard-anomalies" hidden>
+          <h2>Anomalies</h2>
+          <ul id="dashboard-anomalies-list" class="finding-list"></ul>
+        </div>
+
+      </section>
+
+
+
+      <section id="view-insights" class="view" hidden>
+
+        <header class="view-header">
+
+          <div>
+
+            <h1>Insights</h1>
+
+            <p class="muted">Report card, transit doctor, housing &amp; budget analyzers</p>
+
+          </div>
+
+          <div class="hero-actions">
+            <button type="button" id="export-report" class="btn secondary btn-sm">Save HTML report</button>
+          </div>
+
+        </header>
+
+        <div id="insights-content" class="insights-grid"></div>
 
       </section>
 
@@ -134,16 +178,20 @@
 
       <section id="view-issues" class="view" hidden>
 
-        <header class="view-header">
-
+        <header class="view-header issues-header">
           <div>
-
             <h1>Issues</h1>
-
             <p class="muted">Setup problems and current city pressures</p>
-
           </div>
-
+          <div class="issues-header-actions">
+            <label class="toggle-switch toggle-switch-compact" for="watch-enabled" title="Windows toasts when treasury, population, or issues shift">
+              <input type="checkbox" id="watch-enabled" class="toggle-switch-input" />
+              <span class="toggle-switch-track" aria-hidden="true"><span class="toggle-switch-thumb"></span></span>
+              <span class="toggle-switch-copy">
+                <span class="toggle-switch-title">Desktop notifications</span>
+              </span>
+            </label>
+          </div>
         </header>
 
         <div id="issues-list" class="issues-list"></div>
@@ -166,15 +214,14 @@
           <div class="ask-scroll">
             <div id="ask-welcome" class="ask-welcome">
               <p class="ask-welcome-title">Ask about your city</p>
-              <p class="muted small">Pick a suggestion below or type your own question. Answers use your live export and Cities Wiki knowledge.</p>
+              <p class="ask-welcome-lead">Pick a suggestion below or type your own question.</p>
             </div>
-
-            <div id="suggestions" class="suggestions"></div>
 
             <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
           </div>
 
           <form id="ask-form" class="ask-dock" aria-busy="false">
+            <div id="suggestions" class="suggestions"></div>
             <div class="ask-composer-row">
               <div class="composer">
                 <label class="sr-only" for="question">Your question</label>
@@ -182,7 +229,7 @@
               </div>
               <button type="submit" class="btn primary ask-send" id="ask-submit" aria-label="Send question">Send</button>
             </div>
-            <p id="ask-helper" class="ask-helper muted small"></p>
+            <p id="ask-helper" class="ask-helper"></p>
           </form>
         </div>
 
@@ -215,7 +262,7 @@
               <label class="field"><span class="field-label">Discovery</span><input id="setup-source" class="path-input control" readonly /></label>
               <label class="field"><span class="field-label">Game folder</span><input id="setup-game" class="path-input control" /></label>
               <label class="field"><span class="field-label">Locale.cok</span><input id="setup-locale" class="path-input control" /></label>
-              <label class="field"><span class="field-label">Export path</span><input id="setup-export" class="path-input control" /></label>
+              <label class="field"><span class="field-label">Snapshot path</span><input id="setup-export" class="path-input control" /></label>
             </form>
 
             <div class="card-actions">
@@ -249,8 +296,16 @@
               <p class="muted small">Optional. Free tier at <a href="https://console.mistral.ai" target="_blank" rel="noopener">console.mistral.ai</a>. Key stays on your PC.</p>
             </div>
             <div class="form-stack">
+              <label class="field"><span class="field-label">Provider</span>
+                <select id="setup-provider" class="control select-control">
+                  <option value="mistral">Mistral Cloud</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="local">Local (Ollama / LM Studio)</option>
+                </select>
+              </label>
               <label class="field"><span class="field-label">Model</span><input id="setup-model" class="control" placeholder="mistral-medium-latest" /></label>
-              <label class="field"><span class="field-label">API key</span><input id="api-key" class="control" type="password" placeholder="Paste Mistral API key" autocomplete="off" /></label>
+              <label class="field"><span class="field-label">API key</span><input id="api-key" class="control" type="password" placeholder="Paste API key" autocomplete="off" /></label>
+              <p id="key-hint" class="muted small">Required for Mistral/OpenAI. Local Ollama can use any placeholder.</p>
             </div>
             <div class="card-actions">
               <button type="button" id="test-key" class="btn secondary">Test key</button>
@@ -393,7 +448,7 @@
 
       </header>
 
-      <p class="muted small diagnostics-modal-intro">Export metadata, schema version, and advisor context.</p>
+      <p class="muted small diagnostics-modal-intro">Snapshot metadata, schema version, and advisor context.</p>
 
       <pre id="brief-technical" class="mono-block diagnostics-modal-body"></pre>
 

@@ -2,6 +2,34 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.4.0] — 2026-07-05
+
+### Logic & performance
+
+- **Grade deltas** — report card now loads historian history before comparing sessions; deltas work in GUI, CLI, and MCP.
+- **Wellbeing scoring** — fixed inflated grades when only wellbeing was present.
+- **Conversation** — chat turns clear when the active city changes.
+- **Historian** — sync throttle is lock-safe; watch mode uses historian instead of the 5s in-memory poller.
+- **Poll cost** — knowledge cache no longer reloads on every `/api/status`; dashboard bundles issues; status polls every ~60s.
+- **History & sync** — dashboard and historian cap raised to **1000 points**; mod export, historian sync, and GUI poll aligned at **5 seconds**; stale threshold **15 seconds**.
+- **Watch toasts** — persistent issue notifications re-fire at most every **30 minutes** (was ~5–10 minutes).
+
+### GUI
+
+- SSE Ask keeps sources visible while tokens stream; chat history XSS fixed.
+- Dashboard shows an honest error card instead of infinite skeleton when export is missing.
+- Poll error toasts deduplicated; desktop-notifications toggle no longer races with server state.
+- Manual **Refresh** button removed (5s auto-poll covers dashboard updates).
+- Ask **Sources** collapsed by default; chat auto-scrolls to the latest message.
+- Sidebar stays fixed; only the right panel scrolls.
+
+### Security & packaging
+
+- Static path traversal blocked; JSON bodies capped at 1 MB; report export restricted to `%APPDATA%/CitiesAI/reports`.
+- Installer version read from `pyproject.toml` at build time; fallback version 0.4.0.
+
+---
+
 ## [0.3.0] — 2026-07-04
 
 ### Export data quality (mod + advisor)

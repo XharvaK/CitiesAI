@@ -5,7 +5,7 @@ from typing import Any
 
 from .config import CitiesAIConfig, config_path, load_config
 from .discovery import discover_paths
-from .knowledge import knowledge_status, reset_knowledge_cache
+from .knowledge import knowledge_status
 from .llm import resolve_llm_settings
 from .snapshot import load_snapshot_safe, snapshot_meta
 
@@ -58,7 +58,6 @@ def collect_status_report(cfg: CitiesAIConfig | None = None) -> dict[str, Any]:
 
     knowledge_block: dict[str, Any]
     try:
-        reset_knowledge_cache()
         knowledge_block = knowledge_status()
         enc = knowledge_block.get("encyclopedia", {})
         if not enc.get("available"):

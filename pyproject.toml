@@ -1,6 +1,6 @@
 [project]
 name = "citiesai"
-version = "0.3.0"
+version = "0.4.0"
 description = "Read-only Cities: Skylines II gameplay advisor - city snapshot + wiki knowledge"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,6 +30,7 @@ Issues = "https://github.com/XharvaK/CitiesAI/issues"
 [project.scripts]
 citiesai = "citiesai.cli:main"
 citiesai-advisor = "citiesai.cli:main"
+citiesai-mcp = "citiesai.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -53,6 +54,7 @@ include = [
 [dependency-groups]
 dev = [
     "pillow>=10.0",
+    "pyinstaller>=6.0",
     "pytest>=8.0",
     "ruff>=0.6",
 ]
