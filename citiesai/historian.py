@@ -34,6 +34,7 @@ _HISTORY_METRIC_KEYS = (
 
 SESSION_GAP_SECONDS = 30 * 60
 SYNC_THROTTLE_SECONDS = float(EXPORT_INTERVAL_SECONDS)
+METRICS_SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS cities (
@@ -71,6 +72,11 @@ CREATE TABLE IF NOT EXISTS report_scores (
     scores_json TEXT NOT NULL,
     ingested_at REAL NOT NULL,
     UNIQUE(city_id, exported_at_utc)
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_city_time ON snapshots(city_id, exported_at_utc);
@@ -111,7 +117,9 @@ class CityHistorian:
         self._db_path = db_path or (config_dir() / "historian.db")
         self._lock = threading.Lock()
         self._last_sync_at: float = 0.0
+        self._pending_force_sync = False
         self._ensure_schema()
+        self._migrate_metrics_schema()
 
     def _connect(self) -> sqlite3.Connection:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -122,6 +130,25 @@ class CityHistorian:
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+
+    def _migrate_metrics_schema(self) -> None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT value FROM meta WHERE key = 'metrics_schema_version'",
+            ).fetchone()
+            stored = int(row["value"]) if row else 1
+            if stored >= METRICS_SCHEMA_VERSION:
+                return
+            conn.execute("DELETE FROM ingested_files")
+            conn.execute(
+                """
+                INSERT INTO meta(key, value) VALUES ('metrics_schema_version', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (str(METRICS_SCHEMA_VERSION),),
+            )
+            conn.commit()
+            self._pending_force_sync = True
 
     def _city_id(self, conn: sqlite3.Connection, name: str) -> int:
         conn.execute("INSERT OR IGNORE INTO cities(name) VALUES (?)", (name,))
@@ -188,6 +215,9 @@ class CityHistorian:
 
     def sync(self, export_path: Path | None = None, *, force: bool = False) -> dict[str, Any]:
         with self._lock:
+            if self._pending_force_sync:
+                force = True
+                self._pending_force_sync = False
             now = time.time()
             if not force and now - self._last_sync_at < SYNC_THROTTLE_SECONDS:
                 return {"ingested": 0, "db_path": str(self._db_path), "skipped": True}

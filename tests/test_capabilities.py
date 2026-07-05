@@ -66,6 +66,75 @@ def test_report_card_economy_surplus_projects_runway(vendor_sample: dict) -> Non
     assert economy["score"] >= 80
 
 
+def test_report_card_economy_cricklade_like_surplus(vendor_sample: dict) -> None:
+    snapshot = json.loads(json.dumps(vendor_sample))
+    finance = snapshot["official_city_statistics"]["finance"]
+    finance["money"] = 3_440_273
+    finance["income"] = 1_632_775
+    finance["expense"] = 772_073
+    meta = snapshot_meta(snapshot, path=VENDOR_SAMPLE)
+    card = build_report_card(snapshot, meta)
+    economy = next(d for d in card["domains"] if d["id"] == "economy")
+    assert economy["grade"] in {"A", "B"}
+    assert economy["score"] >= 80
+
+
+def test_report_card_economy_thin_reserves_surplus_at_least_c(vendor_sample: dict) -> None:
+    snapshot = json.loads(json.dumps(vendor_sample))
+    finance = snapshot["official_city_statistics"]["finance"]
+    finance["money"] = 3_500_000
+    finance["income"] = 1_500_000
+    finance["expense"] = 1_000_000
+    meta = snapshot_meta(snapshot, path=VENDOR_SAMPLE)
+    card = build_report_card(snapshot, meta)
+    economy = next(d for d in card["domains"] if d["id"] == "economy")
+    assert economy["grade"] in {"A", "B", "C"}
+    assert economy["score"] >= 70
+
+
+def test_historian_metrics_schema_backfill(tmp_path: Path, vendor_sample: dict) -> None:
+    export_dir = tmp_path / "CS2DataExport"
+    export_dir.mkdir()
+    snap_dir = export_dir / "snapshots"
+    snap_dir.mkdir()
+    now = datetime.now(UTC)
+    old = json.loads(json.dumps(vendor_sample))
+    old["exported_at_utc"] = (now - timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+    new = json.loads(json.dumps(vendor_sample))
+    new["exported_at_utc"] = now.isoformat().replace("+00:00", "Z")
+    old_path = snap_dir / "old.json"
+    latest = export_dir / "latest.json"
+    old_path.write_text(json.dumps(old), encoding="utf-8")
+    latest.write_text(json.dumps(new), encoding="utf-8")
+
+    db = tmp_path / "hist.db"
+    historian = CityHistorian(db_path=db)
+    historian.sync(latest, force=True)
+    with historian._connect() as conn:  # noqa: SLF001
+        conn.execute(
+            "UPDATE snapshots SET metrics_json = ?",
+            (
+                json.dumps(
+                    {
+                        "population": 1000,
+                        "treasury": 100,
+                    }
+                ),
+            ),
+        )
+        conn.execute(
+            "UPDATE meta SET value = '1' WHERE key = 'metrics_schema_version'",
+        )
+        conn.commit()
+
+    historian = CityHistorian(db_path=db)
+    historian.sync(latest)
+    history = historian.get_history(export_path=latest, limit=50)
+    values = history["series"].get("unemployment_percent") or []
+    numeric = [v for v in values if isinstance(v, (int, float))]
+    assert len(numeric) >= 2
+
+
 def test_diff_snapshots(vendor_sample: dict) -> None:
     modified = json.loads(json.dumps(vendor_sample))
     modified["official_city_statistics"]["finance"]["money"] = 999

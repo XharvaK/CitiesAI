@@ -740,6 +740,16 @@ function metricDefByKey(key) {
   return METRIC_DEFS.find((def) => def.key === key);
 }
 
+function sparklineSeries(def, metrics, series) {
+  const historyValues = series[def.key] || [];
+  const numeric = historyValues.filter((v) => typeof v === "number" && !Number.isNaN(v));
+  if (numeric.length >= 2) return historyValues;
+  const live = metrics[def.key];
+  if (typeof live !== "number" || Number.isNaN(live)) return historyValues;
+  if (numeric.length === 1) return [numeric[0], live];
+  return [live, live];
+}
+
 function buildMetricCardHtml(def, m, deltas, series, options = {}) {
   const sparklineEmptyLabel = options.sparklineEmptyLabel ?? "Collecting…";
   const val = m[def.key];
@@ -752,8 +762,8 @@ function buildMetricCardHtml(def, m, deltas, series, options = {}) {
         ? Number(delta)
         : Math.round(Number(delta));
   const deltaCls = metricDeltaClass(roundedDelta, def.invertDelta);
-  const historyValues = series[def.key] || [];
-  const hasSparkline = historyValues.filter((v) => typeof v === "number").length >= 2;
+  const sparkValues = sparklineSeries(def, m, series);
+  const hasSparkline = sparkValues.filter((v) => typeof v === "number" && !Number.isNaN(v)).length >= 2;
   const deltaOpts = { decimals: def.decimals ?? 0, currency: Boolean(def.currency) };
 
   let hourlyHtml = "";
@@ -1001,7 +1011,9 @@ function renderDashboard(data) {
   const forecastData = data.forecasts?.forecasts || {};
   grid.querySelectorAll(".sparkline").forEach((svg) => {
     const key = svg.dataset.key;
-    drawSparkline(svg, series[key], forecastData[key]?.projected);
+    const def = metricDefByKey(key);
+    const values = def ? sparklineSeries(def, m, series) : series[key] || [];
+    drawSparkline(svg, values, forecastData[key]?.projected);
   });
   bindMetricCards();
 

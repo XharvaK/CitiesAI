@@ -21,6 +21,33 @@ def unemployment_percent(employment_rate: Any) -> float | None:
     return round(100.0 - rate, 2)
 
 
+def unemployment_from_workforce(workforce: dict[str, Any]) -> float | None:
+    workers = _num(
+        pick(
+            workforce,
+            "Workers",
+            "workers",
+            "EmployedWorkers",
+            "employed_workers",
+        )
+    )
+    unemployed = _num(
+        pick(
+            workforce,
+            "Unemployed",
+            "unemployed",
+            "UnemployedWorkers",
+            "unemployed_workers",
+        )
+    )
+    if workers is None or unemployed is None:
+        return None
+    total = workers + unemployed
+    if total <= 0:
+        return None
+    return round(unemployed / total * 100.0, 2)
+
+
 def congestion_percent(congestion_index: Any) -> float | None:
     index = _num(congestion_index)
     if index is None:
@@ -91,15 +118,30 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
         ),
         "crime_rate": pick(social, "CrimeRate", "crime_rate"),
         "educated_percent": pick(education, "EducatedPercent", "educated_percent"),
-        "unemployment_percent": unemployment_percent(
-            pick(education, "EmploymentRatePercent", "employment_rate_percent")
+        "unemployment_percent": (
+            unemployment_percent(
+                pick(education, "EmploymentRatePercent", "employment_rate_percent")
+            )
+            or unemployment_from_workforce(workforce)
         ),
         "congestion_percent": congestion_percent(
             pick(transport, "CongestionIndex0To1", "congestion_index_0_to_1")
         ),
         "transit_lines": pick(mobility, "LinesTotal", "lines_total"),
         "workforce_potential": pick(workforce, "TotalPotentialWorkers", "total_potential_workers"),
-        "workforce_employed": pick(workforce, "EmployedWorkers", "employed_workers"),
-        "workforce_unemployed": pick(workforce, "UnemployedWorkers", "unemployed_workers"),
+        "workforce_employed": pick(
+            workforce,
+            "Workers",
+            "workers",
+            "EmployedWorkers",
+            "employed_workers",
+        ),
+        "workforce_unemployed": pick(
+            workforce,
+            "Unemployed",
+            "unemployed",
+            "UnemployedWorkers",
+            "unemployed_workers",
+        ),
         "signals": signals,
     }

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 import tomllib
 from pathlib import Path
 
 import pytest
 
 from citiesai.ask_core import run_ask
-from citiesai.dashboard import extract_headline_metrics
+from citiesai.dashboard import extract_headline_metrics, unemployment_from_workforce
 from citiesai.env_store import save_env_var
 from citiesai.feedback import submit_feedback
 from citiesai.gui.api import api_dashboard, api_setup_preview, api_status, api_version
@@ -22,7 +23,7 @@ VENDOR_SAMPLE = (
 
 
 def test_version() -> None:
-    assert __version__ == "0.5"
+    assert __version__ == "0.5.1"
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     assert data["project"]["version"] == __version__
@@ -30,7 +31,7 @@ def test_version() -> None:
 
 def test_api_version() -> None:
     data = api_version()
-    assert data["version"] == "0.5"
+    assert data["version"] == "0.5.1"
 
 
 def test_collect_status_report_shape() -> None:
@@ -51,6 +52,31 @@ def test_extract_headline_metrics(vendor_sample: dict) -> None:
     assert metrics["city_name"] == "Evergreen Bay"
     assert metrics["unemployment_percent"] == pytest.approx(5.28)
     assert metrics["congestion_percent"] == pytest.approx(4.2)
+
+
+def test_extract_headline_metrics_pascal_case(vendor_sample: dict) -> None:
+    snapshot = json.loads(json.dumps(vendor_sample))
+    snapshot["Education"] = snapshot.pop("education")
+    snapshot["TransportProxies"] = snapshot.pop("transport_proxies")
+    meta = snapshot_meta(snapshot, path=VENDOR_SAMPLE)
+    metrics = extract_headline_metrics(snapshot, meta)
+    assert metrics["unemployment_percent"] == pytest.approx(5.28)
+    assert metrics["congestion_percent"] == pytest.approx(4.2)
+
+
+def test_unemployment_workforce_fallback() -> None:
+    workforce = {"Workers": 2774, "Unemployed": 1491}
+    assert unemployment_from_workforce(workforce) == pytest.approx(34.96, abs=0.01)
+
+
+def test_unemployment_workforce_fallback_in_metrics(vendor_sample: dict) -> None:
+    snapshot = json.loads(json.dumps(vendor_sample))
+    snapshot["education"]["employment_rate_percent"] = None
+    snapshot["workforce"]["workers"] = 80
+    snapshot["workforce"]["unemployed"] = 20
+    meta = snapshot_meta(snapshot, path=VENDOR_SAMPLE)
+    metrics = extract_headline_metrics(snapshot, meta)
+    assert metrics["unemployment_percent"] == pytest.approx(20.0)
 
 
 @pytest.fixture

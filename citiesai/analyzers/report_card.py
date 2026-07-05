@@ -34,14 +34,80 @@ def _economy_runway_months(
     expense: float,
     *,
     net_monthly: float | None,
-    projection_months: int = 3,
+    projection_months: int = 12,
 ) -> float:
-    """Months of expenses treasury covers; surplus cities get a short forward look."""
+    """Months of expenses treasury covers; surplus cities get a forward look."""
     static = treasury / expense
     if net_monthly is not None and net_monthly > 0 and projection_months > 0:
         projected = (treasury + net_monthly * projection_months) / expense
         return max(static, projected)
     return static
+
+
+def _treasury_momentum_bonus(treasury_series: list[Any] | None) -> float:
+    if not treasury_series:
+        return 0.0
+    values = [float(v) for v in treasury_series if isinstance(v, (int, float))]
+    if len(values) < 3:
+        return 0.0
+    window = values[-10:]
+    if len(window) < 3:
+        return 0.0
+    delta = window[-1] - window[0]
+    base = abs(window[0])
+    if base <= 0 or delta <= 0:
+        return 0.0
+    return min(10.0, (delta / base) * 100.0)
+
+
+def _score_economy(
+    *,
+    income: Any,
+    expense: Any,
+    treasury: Any,
+    net_monthly: Any,
+    treasury_series: list[Any] | None = None,
+) -> float:
+    margin_score: float | None = None
+    runway_score: float | None = None
+    margin: float | None = None
+
+    if isinstance(income, (int, float)) and isinstance(expense, (int, float)) and expense > 0:
+        margin = (float(income) - float(expense)) / float(expense)
+        margin_score = _score_clamp(margin, low=-0.2, high=0.3)
+
+    if isinstance(treasury, (int, float)) and isinstance(expense, (int, float)) and expense > 0:
+        net = float(net_monthly) if isinstance(net_monthly, (int, float)) else None
+        runway = _economy_runway_months(
+            float(treasury),
+            float(expense),
+            net_monthly=net,
+        )
+        runway_score = _score_clamp(runway, low=1, high=12)
+
+    if margin_score is not None and runway_score is not None:
+        surplus = isinstance(net_monthly, (int, float)) and float(net_monthly) > 0
+        if surplus:
+            econ_score = margin_score * 0.65 + runway_score * 0.35
+        else:
+            econ_score = (margin_score + runway_score) / 2
+    elif margin_score is not None:
+        econ_score = margin_score
+    elif runway_score is not None:
+        econ_score = runway_score
+    else:
+        econ_score = 50.0
+
+    econ_score += _treasury_momentum_bonus(treasury_series)
+    econ_score = min(100.0, econ_score)
+
+    if margin is not None and isinstance(net_monthly, (int, float)) and float(net_monthly) > 0:
+        if margin >= 0.30:
+            econ_score = max(econ_score, 80.0)
+        elif margin >= 0.15:
+            econ_score = max(econ_score, 75.0)
+
+    return econ_score
 
 
 def _delta_grade(current: str, previous: str | None) -> str | None:
@@ -59,6 +125,7 @@ def build_report_card(
     meta: SnapshotMeta,
     *,
     previous_domain_scores: dict[str, dict[str, Any]] | None = None,
+    treasury_series: list[Any] | None = None,
 ) -> dict[str, Any]:
     metrics = extract_headline_metrics(snapshot, meta)
     budget = analyze_budget(snapshot)
@@ -76,17 +143,13 @@ def build_report_card(
     expense = budget.get("expense")
     treasury = budget.get("treasury")
     net_monthly = budget.get("net_monthly")
-    econ_score = 50.0
-    if isinstance(income, (int, float)) and isinstance(expense, (int, float)) and expense > 0:
-        margin = (income - expense) / expense
-        econ_score = _score_clamp(margin, low=-0.2, high=0.3)
-    if isinstance(treasury, (int, float)) and isinstance(expense, (int, float)) and expense > 0:
-        runway = _economy_runway_months(
-            float(treasury),
-            float(expense),
-            net_monthly=float(net_monthly) if isinstance(net_monthly, (int, float)) else None,
-        )
-        econ_score = (econ_score + _score_clamp(runway, low=1, high=12)) / 2
+    econ_score = _score_economy(
+        income=income,
+        expense=expense,
+        treasury=treasury,
+        net_monthly=net_monthly,
+        treasury_series=treasury_series,
+    )
     econ_grade = _grade(econ_score)
     domains.append(
         {

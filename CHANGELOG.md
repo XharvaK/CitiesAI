@@ -2,6 +2,20 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.5.1] — 2026-07-05
+
+### Fixes
+
+- **Economy grade** — surplus cities weighted toward margin (65/35), 12-month runway projection, treasury momentum bonus, and minimum **C/B** floor for healthy margins.
+- **Unemployment / congestion** — workforce fallback when education employment rate is missing; historian **metrics schema v2** migration re-ingests snapshots so sparklines populate after upgrading from 0.4/0.5.
+- **Sparklines** — show live metric when historian has fewer than two points for a new metric.
+
+### Install
+
+Download **`CitiesAI-Setup-0.5.1.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+
+---
+
 ## [0.5] — 2026-07-05
 
 ### Metrics & export (schema 2.10.0)

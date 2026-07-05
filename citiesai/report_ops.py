@@ -23,7 +23,13 @@ def build_and_persist_report_card(
     city_name = resolve_city_display_name(snapshot, meta)
     history = hist.get_history(city_name, export_path=export_path, limit=HISTORY_MAX_POINTS)
     prev_scores = hist.previous_session_report_scores(city_name, history=history)
-    card = build_report_card(snapshot, meta, previous_domain_scores=prev_scores)
+    treasury_series = history.get("series", {}).get("treasury")
+    card = build_report_card(
+        snapshot,
+        meta,
+        previous_domain_scores=prev_scores,
+        treasury_series=treasury_series,
+    )
     exported_at = meta.exported_at_utc
     if exported_at and card.get("domain_scores"):
         existing = hist.report_scores_at(city_name, exported_at)
