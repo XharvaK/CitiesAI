@@ -10,8 +10,8 @@
 
   <title>CitiesAI</title>
 
-  <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
   <link rel="icon" href="/static/logo.png" type="image/png" sizes="512x512" />
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
   <link rel="apple-touch-icon" href="/static/logo.png" />
 
   <link rel="stylesheet" href="/static/app.css" />
@@ -92,6 +92,8 @@
 
       <div class="sidebar-foot">
 
+        <button type="button" id="open-notifications" class="btn ghost btn-sm notification-btn" aria-label="Alerts (0)">ALERTS (0)</button>
+
         <button type="button" id="health-strip" class="health-strip" aria-live="polite">Checking…</button>
 
       </div>
@@ -117,14 +119,6 @@
 
           <div class="hero-actions">
 
-            <label class="field-inline">Range
-              <select id="dashboard-range" class="control select-control">
-                <option value="36">Last hour</option>
-                <option value="120">Session</option>
-                <option value="1000" selected>All points</option>
-              </select>
-            </label>
-
             <span id="freshness-pill" class="pill">...</span>
 
             <button type="button" id="open-diagnostics" class="btn ghost btn-sm">Diagnostics</button>
@@ -133,6 +127,8 @@
 
         </header>
 
+        <div id="mayors-briefing" class="digest-banner briefing-banner" hidden></div>
+
         <div id="session-digest" class="digest-banner" hidden></div>
 
         <div id="report-card-strip" class="report-card-strip" hidden></div>
@@ -140,11 +136,6 @@
         <div id="forecast-alerts" class="forecast-alerts" hidden></div>
 
         <div id="metric-grid" class="metric-grid"></div>
-
-        <div id="dashboard-anomalies" class="card dashboard-anomalies" hidden>
-          <h2>Anomalies</h2>
-          <ul id="dashboard-anomalies-list" class="finding-list"></ul>
-        </div>
 
       </section>
 
@@ -193,6 +184,11 @@
         </header>
 
         <div id="issues-list" class="issues-list"></div>
+
+        <div id="issues-resolved" class="issues-resolved card" hidden>
+          <h2>Recently resolved</h2>
+          <ul id="issues-resolved-list" class="finding-list"></ul>
+        </div>
 
       </section>
 
@@ -404,6 +400,18 @@
   </div>
 
 
+
+  <div id="notifications-modal" class="metric-modal" hidden role="dialog" aria-modal="true" aria-labelledby="notifications-modal-title">
+    <div class="metric-modal-backdrop" data-close-notifications-modal></div>
+    <div class="metric-modal-card">
+      <header class="metric-modal-header">
+        <h2 id="notifications-modal-title">Alerts</h2>
+        <button type="button" id="notifications-mark-read" class="btn ghost btn-sm">Mark all read</button>
+        <button type="button" id="notifications-modal-close" class="btn ghost metric-modal-close" aria-label="Close">×</button>
+      </header>
+      <ul id="notifications-list" class="finding-list notifications-list"></ul>
+    </div>
+  </div>
 
   <div id="metric-modal" class="metric-modal" hidden role="dialog" aria-modal="true" aria-labelledby="metric-modal-title">
 

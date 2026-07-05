@@ -6,6 +6,7 @@ import json
 import sys
 from typing import Any
 
+from .briefing import build_mayors_briefing
 from .city_issues import detect_city_issues
 from .config import apply_config_to_env, load_config
 from .constants import HISTORY_MAX_POINTS
@@ -58,6 +59,26 @@ TOOLS = [
         "description": "Trend forecasts and alerts from recent history.",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "get_access_gaps",
+        "description": "Transit access gap hotspots and next-line recommendations.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_demand_factors",
+        "description": "RCI demand bars and negative factor breakdown.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_utilities_services",
+        "description": "Electricity, garbage, and service coverage signals.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_mayors_briefing",
+        "description": "Session-start briefing with digest, priorities, and grade deltas.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -102,6 +123,26 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
         historian.sync()
         history = historian.get_history(limit=HISTORY_MAX_POINTS)
         return json.dumps(build_forecasts(history), ensure_ascii=False, indent=2)
+    if name == "get_access_gaps":
+        from .analyzers.access_gaps import analyze_access_gaps
+
+        return json.dumps(analyze_access_gaps(snapshot), ensure_ascii=False, indent=2)
+    if name == "get_demand_factors":
+        from .analyzers.demand_factors import analyze_demand_factors
+
+        return json.dumps(analyze_demand_factors(snapshot), ensure_ascii=False, indent=2)
+    if name == "get_utilities_services":
+        from .analyzers.utilities_services import analyze_utilities_services
+
+        return json.dumps(analyze_utilities_services(snapshot), ensure_ascii=False, indent=2)
+    if name == "get_mayors_briefing":
+        historian = get_historian()
+        historian.sync()
+        return json.dumps(
+            build_mayors_briefing(snapshot, meta, historian=historian),
+            ensure_ascii=False,
+            indent=2,
+        )
     raise ValueError(f"Unknown tool: {name}")
 
 

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from .analyzers.access_gaps import analyze_access_gaps
+from .analyzers.demand_factors import analyze_demand_factors
+from .analyzers.utilities_services import analyze_utilities_services
 from .snapshot import pick, pick_group
 from .social_stats import format_social_index, resident_population, social_index
 
@@ -27,6 +30,14 @@ _SEMANTIC_PARTIAL_COPY: dict[str, dict[str, str]] = {
     "utility_pressure_semantics": {
         "title": "Utility data is unavailable",
         "ask_prompt": "How do I fix water and sewage service in my city?",
+    },
+    "demand_factors_semantics": {
+        "title": "RCI demand data is unavailable",
+        "ask_prompt": "Why is residential or commercial demand weak in my city?",
+    },
+    "utilities_services_semantics": {
+        "title": "Power and garbage data is unavailable",
+        "ask_prompt": "Why is electricity or garbage service failing in my city?",
     },
 }
 
@@ -365,6 +376,57 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
 
+    access_gaps = analyze_access_gaps(snapshot)
+    if access_gaps.get("ok") and access_gaps.get("hotspots_with_uncovered_demand", 0) > 0:
+        top = access_gaps.get("top_recommendation") or access_gaps.get("summary", "")
+        issues.append(
+            _city_issue(
+                "city_transit_access_gaps",
+                severity="warn",
+                title="Uncovered transit demand",
+                detail=f"{access_gaps['hotspots_with_uncovered_demand']} hotspot(s) lack stop coverage. {top}",
+                ask_prompt=access_gaps.get(
+                    "ask_prompt",
+                    "Where should I build my next transit line?",
+                ),
+            )
+        )
+
+    demand = analyze_demand_factors(snapshot)
+    for zone in demand.get("weak_zones", []):
+        issues.append(
+            _city_issue(
+                "city_demand_weak",
+                severity=str(zone.get("severity", "warn")),
+                title=f"{zone['label']} demand is weak",
+                detail=str(zone.get("detail", demand.get("summary", ""))),
+                ask_prompt=demand.get(
+                    "ask_prompt",
+                    "Why is residential or commercial demand weak in my city?",
+                ),
+            )
+        )
+
+    utilities = analyze_utilities_services(snapshot)
+    for finding in utilities.get("findings", []):
+        issue_id = {
+            "electricity_pressure": "city_electricity_shortage",
+            "garbage_accumulation": "city_garbage_crisis",
+            "healthcare_beds_full": "city_healthcare_capacity",
+        }.get(str(finding.get("id")), "city_utilities_pressure")
+        issues.append(
+            _city_issue(
+                issue_id,
+                severity=str(finding.get("severity", "warn")),
+                title=str(finding.get("title", "Utilities pressure")),
+                detail=str(finding.get("detail", utilities.get("summary", ""))),
+                ask_prompt=utilities.get(
+                    "ask_prompt",
+                    "Why is electricity or garbage service failing in my city?",
+                ),
+            )
+        )
+
     if (
         city_service_fill is not None
         and city_service_fill < THRESHOLDS["city_service_fill_low"]
@@ -383,6 +445,8 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
         ("housing_pressure_semantics", pick_group(snapshot, "HousingPressureSemantics")),
         ("labor_pressure_context", pick_group(snapshot, "LaborPressureContext")),
         ("utility_pressure_semantics", utility),
+        ("demand_factors_semantics", pick_group(snapshot, "DemandFactorsSemantics")),
+        ("utilities_services_semantics", pick_group(snapshot, "UtilitiesServicesSemantics")),
     ]
     for group_id, group in watched_groups:
         status = pick(group, "Status", "status")

@@ -23,7 +23,7 @@ VENDOR_SAMPLE = (
 
 
 def test_version() -> None:
-    assert __version__ == "0.5.2"
+    assert __version__ == "0.6.0"
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     assert data["project"]["version"] == __version__
@@ -31,7 +31,7 @@ def test_version() -> None:
 
 def test_api_version() -> None:
     data = api_version()
-    assert data["version"] == "0.5.2"
+    assert data["version"] == "0.6.0"
 
 
 def test_collect_status_report_shape() -> None:
@@ -52,6 +52,30 @@ def test_extract_headline_metrics(vendor_sample: dict) -> None:
     assert metrics["city_name"] == "Evergreen Bay"
     assert metrics["unemployment_percent"] == pytest.approx(5.28)
     assert metrics["congestion_percent"] == pytest.approx(4.2)
+    assert metrics["crime_rate"] == 8
+
+
+def test_extract_headline_metrics_utility_fulfillment() -> None:
+    snapshot = {
+        "city": {"building_count": 1},
+        "population": {"total_population": 1000},
+        "official_city_statistics": {
+            "time": {"game_year": 2026, "game_month": 1},
+            "finance": {"money": 1, "income": 1, "expense": 1},
+            "social": {"wellbeing": 50, "health": 50, "crime_rate": 3},
+        },
+        "education": {"employment_rate_percent": 95},
+        "utility_pressure_semantics": {
+            "status": "ok",
+            "water": {"fulfillment_percent": 98.0},
+            "sewage": {"fulfillment_percent": 91.5},
+        },
+    }
+    meta = snapshot_meta(snapshot, path=Path("test.json"))
+    metrics = extract_headline_metrics(snapshot, meta)
+    assert metrics["water_fulfillment_percent"] == pytest.approx(98.0)
+    assert metrics["sewage_fulfillment_percent"] == pytest.approx(91.5)
+    assert metrics["crime_rate"] == 3
 
 
 def test_extract_headline_metrics_pascal_case(vendor_sample: dict) -> None:

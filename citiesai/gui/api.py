@@ -5,7 +5,14 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from ..analyzers import analyze_budget, analyze_housing_labor, analyze_transit_lines
+from ..analyzers import (
+    analyze_access_gaps,
+    analyze_budget,
+    analyze_demand_factors,
+    analyze_housing_labor,
+    analyze_transit_lines,
+    analyze_utilities_services,
+)
 from ..ask_core import (
     build_ask_bundle,
     collect_sources_for_queries,
@@ -13,6 +20,7 @@ from ..ask_core import (
     prepare_agentic_ask,
     run_ask,
 )
+from ..briefing import build_mayors_briefing
 from ..city_issues import detect_city_issues
 from ..city_name import resolve_city_display_name
 from ..config import config_dir, config_path, load_config, merge_discovered, set_onboarding_complete
@@ -100,14 +108,34 @@ def api_status() -> dict[str, Any]:
     return _status_with_issues()
 
 
+def _sync_city_state(snapshot: dict[str, Any], meta: Any, issues: list[dict[str, Any]]) -> str:
+    city_name = resolve_city_display_name(snapshot, meta)
+    historian = get_historian()
+    historian.sync(meta.path)
+    historian.sync_tracked_issues(city_name, issues)
+    return city_name
+
+
 def api_issues() -> dict[str, Any]:
     report = _status_with_issues()
     issues = report["issues"]
+    city_name = None
+    resolved_history: list[dict[str, Any]] = []
+    cfg = load_config()
+    export_path = cfg.resolved_export_path()
+    if export_path.is_file():
+        snapshot, err = load_snapshot_safe(export_path)
+        if snapshot is not None:
+            meta = snapshot_meta(snapshot, path=export_path)
+            city_name = _sync_city_state(snapshot, meta, issues)
+            issues = get_historian().enrich_issues_with_lifecycle(issues, city_name=city_name)
+            resolved_history = get_historian().get_resolved_history(city_name)
     return {
         "ok": True,
         "issues": issues,
         "count": len(issues),
         "blocking_count": report["blocking_count"],
+        "resolved_history": resolved_history,
     }
 
 
@@ -144,10 +172,19 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
     historian = get_historian()
     historian.sync(export_path)
     hist = historian.get_history(export_path=export_path, limit=limit)
+    issues = detect_city_issues(snapshot)
+    city_name = _sync_city_state(snapshot, meta, issues)
+    issues = historian.enrich_issues_with_lifecycle(issues, city_name=city_name)
     report_card = build_and_persist_report_card(snapshot, meta, historian=historian)
     forecasts = build_forecasts(hist)
     digest = historian.session_digest(history=hist)
-    issues = detect_city_issues(snapshot)
+    briefing = build_mayors_briefing(
+        snapshot,
+        meta,
+        historian=historian,
+        history=hist,
+        issues=issues,
+    )
     return {
         "ok": True,
         "meta": meta_to_dict(meta),
@@ -158,6 +195,11 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         "report_card": report_card,
         "forecasts": forecasts,
         "session_digest": digest,
+        "briefing": briefing,
+        "grade_history": historian.get_grade_history(city_name, limit=limit),
+        "notifications": {
+            "unread_count": historian.unread_notification_count(city_name),
+        },
         "issues": issues,
     }
 
@@ -353,6 +395,79 @@ def api_feedback(body: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def api_feedback_answer(body: dict[str, Any]) -> dict[str, Any]:
+    rating = str(body.get("rating", "")).strip().lower()
+    if rating not in {"up", "down"}:
+        return {"ok": False, "error": "rating must be 'up' or 'down'"}
+    question = str(body.get("question", "")).strip()
+    answer = str(body.get("answer", "")).strip()
+    if not question or not answer:
+        return {"ok": False, "error": "question and answer are required"}
+    category = "wrong-answer" if rating == "down" else "general"
+    prefix = "Helpful answer" if rating == "up" else "Unhelpful answer"
+    message = (
+        f"{prefix}\n\nQ: {question[:500]}\n\nA: {answer[:2000]}"
+    )
+    return submit_feedback(category=category, message=message, attach_system_info=True)
+
+
+def api_briefing() -> dict[str, Any]:
+    cfg = load_config()
+    export_path = cfg.resolved_export_path()
+    if not export_path.is_file():
+        return {"ok": False, "error": "No city export yet"}
+    snapshot, err = load_snapshot_safe(export_path)
+    if snapshot is None:
+        return {"ok": False, "error": err or "Unreadable export"}
+    meta = snapshot_meta(snapshot, path=export_path)
+    historian = get_historian()
+    historian.sync(export_path)
+    issues = detect_city_issues(snapshot)
+    city_name = _sync_city_state(snapshot, meta, issues)
+    issues = historian.enrich_issues_with_lifecycle(issues, city_name=city_name)
+    briefing = build_mayors_briefing(
+        snapshot,
+        meta,
+        historian=historian,
+        issues=issues,
+    )
+    return {"ok": True, "briefing": briefing}
+
+
+def api_notifications(*, unread_only: bool = False) -> dict[str, Any]:
+    cfg = load_config()
+    export_path = cfg.resolved_export_path()
+    if not export_path.is_file():
+        return {"ok": True, "notifications": [], "unread_count": 0}
+    snapshot, err = load_snapshot_safe(export_path)
+    if snapshot is None:
+        return {"ok": True, "notifications": [], "unread_count": 0}
+    meta = snapshot_meta(snapshot, path=export_path)
+    city_name = resolve_city_display_name(snapshot, meta)
+    historian = get_historian()
+    notifications = historian.list_notifications(city_name, unread_only=unread_only)
+    return {
+        "ok": True,
+        "notifications": notifications,
+        "unread_count": historian.unread_notification_count(city_name),
+    }
+
+
+def api_notifications_mark_read(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = body or {}
+    cfg = load_config()
+    export_path = cfg.resolved_export_path()
+    snapshot, _ = load_snapshot_safe(export_path) if export_path.is_file() else (None, None)
+    if snapshot is None:
+        return {"ok": False, "error": "No city export yet"}
+    meta = snapshot_meta(snapshot, path=export_path)
+    city_name = resolve_city_display_name(snapshot, meta)
+    ids_raw = body.get("ids")
+    ids = [int(value) for value in ids_raw] if isinstance(ids_raw, list) else None
+    count = get_historian().mark_notifications_read(city_name, ids)
+    return {"ok": True, "marked_read": count}
+
+
 def api_insights() -> dict[str, Any]:
     cfg = load_config()
     export_path = cfg.resolved_export_path()
@@ -365,13 +480,18 @@ def api_insights() -> dict[str, Any]:
     historian = get_historian()
     historian.sync(export_path)
     hist = historian.get_history(export_path=export_path, limit=HISTORY_MAX_POINTS)
+    city_name = resolve_city_display_name(snapshot, meta)
     return {
         "ok": True,
         "report_card": build_and_persist_report_card(snapshot, meta, historian=historian),
         "transit": analyze_transit_lines(snapshot),
+        "access_gaps": analyze_access_gaps(snapshot),
+        "demand_factors": analyze_demand_factors(snapshot),
+        "utilities_services": analyze_utilities_services(snapshot),
         "housing": analyze_housing_labor(snapshot),
         "budget": analyze_budget(snapshot),
         "anomalies": historian.detect_anomalies(history=hist),
+        "grade_history": historian.get_grade_history(city_name),
     }
 
 

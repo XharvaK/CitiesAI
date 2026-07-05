@@ -247,6 +247,18 @@ class WatchService:
             return []
         get_historian().sync(path)
         alerts = evaluate_watch_alerts(snapshot)
+        meta = snapshot_meta(snapshot, path=path)
+        metrics = extract_headline_metrics(snapshot, meta)
+        city = str(metrics.get("city_name") or "unknown")
+        historian = get_historian()
+        for alert in alerts:
+            historian.record_notification(
+                city,
+                alert_id=alert["id"],
+                title=alert["title"],
+                message=alert["message"],
+                severity="warn",
+            )
         if self._use_toast:
             for alert in alerts:
                 windows_toast(alert["title"], alert["message"])

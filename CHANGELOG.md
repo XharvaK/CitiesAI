@@ -2,6 +2,19 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.6.0] — 2026-07-05
+
+### Advisor release — dashboard to session coach
+
+- **Next Line Advisor** — uses `transit_access_gap_semantics` hotspots to suggest where the next transit line should go (Insights, Issues, Ask tool, MCP).
+- **Issue lifecycle** — tracks city pressures across sessions; Issues tab shows age and recently resolved items; session digest celebrates fixes.
+- **Mayor's Briefing** — session-start summary on the dashboard, `citiesai brief` CLI, and MCP `get_mayors_briefing`.
+- **Dashboard polish** — 12-metric grid (power/water/sewage row), utilities & services card, sidebar ALERTS, Insights layout; remove anomalies/range/budget redundancy.
+- **Small wins** — grade history chart in Insights, in-app Alerts center (watch toasts persisted), Ask answer thumbs up/down feedback.
+- **Schema 2.11** — vendored CS2 Data Export adds `demand_factors_semantics` (RCI bars + factor maps) and `utilities_services_semantics` (electricity, garbage); CitiesAI analyzers, Issues, Insights, dashboard Power card, Ask/MCP tools.
+
+---
+
 ## [0.5.2] — 2026-07-05
 
 ### Fixes

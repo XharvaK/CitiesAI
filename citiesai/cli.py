@@ -291,6 +291,26 @@ def _cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_brief(_args: argparse.Namespace) -> int:
+    from .briefing import build_mayors_briefing
+
+    cfg = load_config()
+    path = cfg.resolved_export_path()
+    if not path.is_file():
+        print(f"Export not found: {path}", file=sys.stderr)
+        return 2
+    snapshot, err = load_snapshot_safe(path)
+    if snapshot is None:
+        print(err or f"Export not readable: {path}", file=sys.stderr)
+        return 2
+    meta = snapshot_meta(snapshot, path=path)
+    historian = get_historian()
+    historian.sync(path)
+    briefing = build_mayors_briefing(snapshot, meta, historian=historian)
+    print(briefing.get("text") or "No briefing content yet.")
+    return 0
+
+
 def _cmd_mcp(_args: argparse.Namespace) -> int:
     return run_mcp_server()
 
@@ -367,6 +387,9 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--format", choices=("text", "html"), default="text")
     report.add_argument("-o", "--output", help="Output path for HTML report")
     report.set_defaults(func=_cmd_report)
+
+    brief = sub.add_parser("brief", help="Mayor's briefing for the current city")
+    brief.set_defaults(func=_cmd_brief)
 
     watch = sub.add_parser("watch", help="Background threshold alerts")
     watch.add_argument("--interval", type=float, default=15.0)

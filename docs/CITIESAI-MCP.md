@@ -30,5 +30,9 @@ Or add to `%USERPROFILE%\.cursor\mcp.json`:
 | `get_history` | Persistent SQLite historian |
 | `get_report_card` | Domain letter grades |
 | `get_forecasts` | Trend projections and alerts |
+| `get_access_gaps` | Transit access gap hotspots and next-line recommendations |
+| `get_demand_factors` | RCI demand bars and negative factor breakdown |
+| `get_utilities_services` | Electricity, garbage, and service coverage signals |
+| `get_mayors_briefing` | Session-start briefing (digest, priorities, grade deltas) |
 
 Requires a loaded city with CS2 Data Export producing `latest.json`.

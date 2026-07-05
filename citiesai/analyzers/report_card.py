@@ -9,6 +9,7 @@ from ..snapshot import SnapshotMeta, pick, pick_group
 from .budget import analyze_budget
 from .housing import analyze_housing_labor
 from .transit import analyze_transit_lines
+from .utilities_services import analyze_utilities_services
 
 
 def _grade(score: float) -> str:
@@ -135,6 +136,7 @@ def build_report_card(
     official = pick_group(snapshot, "OfficialCityStatistics")
     social = pick_group(official, "Social")
     utility = pick_group(snapshot, "UtilityPressureSemantics")
+    utilities = analyze_utilities_services(snapshot)
     city_service_fill = pick(utility, "CityServiceFillPercent", "city_service_fill_percent")
 
     domains: list[dict[str, Any]] = []
@@ -227,7 +229,15 @@ def build_report_card(
         services_score -= 20
     if sewage_pressure not in ("ok", "unknown", ""):
         services_score -= 15
+    electricity_pressure = str(utilities.get("electricity_pressure") or "")
+    if electricity_pressure in ("shortage", "capacity_shortage", "pressure"):
+        services_score -= 20
     services_grade = _grade(max(0, services_score))
+    service_detail_parts: list[str] = []
+    if city_service_fill:
+        service_detail_parts.append(f"City service fill {city_service_fill:.0f}%")
+    if utilities.get("power_headline"):
+        service_detail_parts.append(str(utilities["power_headline"]))
     domains.append(
         {
             "id": "services",
@@ -235,8 +245,8 @@ def build_report_card(
             "score": round(max(0, services_score), 1),
             "grade": services_grade,
             "detail": (
-                f"City service fill {city_service_fill:.0f}%."
-                if city_service_fill
+                " · ".join(service_detail_parts)
+                if service_detail_parts
                 else "Utility/service data partial."
             ),
             "ask_prompt": "What city services should I expand?",

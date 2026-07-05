@@ -63,6 +63,8 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
     transport = pick_group(snapshot, "TransportProxies")
     mobility = pick_group(snapshot, "Mobility")
     workforce = pick_group(snapshot, "Workforce")
+    utilities = pick_group(snapshot, "UtilitiesServicesSemantics")
+    utility_pressure = pick_group(snapshot, "UtilityPressureSemantics")
 
     time_block = pick_group(official, "Time")
     finance = pick_group(official, "Finance")
@@ -126,6 +128,34 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
         ),
         "congestion_percent": congestion_percent(
             pick(transport, "CongestionIndex0To1", "congestion_index_0_to_1")
+        ),
+        "electricity_fulfillment_percent": pick(
+            utilities,
+            "ElectricityFulfillmentPercent",
+            "electricity_fulfillment_percent",
+        )
+        or pick(
+            pick_group(utility_pressure, "Electricity"),
+            "FulfillmentPercent",
+            "fulfillment_percent",
+        ),
+        "water_fulfillment_percent": pick(
+            pick_group(utility_pressure, "Water"),
+            "FulfillmentPercent",
+            "fulfillment_percent",
+        ),
+        "sewage_fulfillment_percent": pick(
+            pick_group(utility_pressure, "Sewage"),
+            "FulfillmentPercent",
+            "fulfillment_percent",
+        ),
+        "power_headline": (
+            f"{pick(utilities, 'ElectricityFulfillmentPercent', 'electricity_fulfillment_percent'):.0f}% power fulfilled"
+            if isinstance(
+                pick(utilities, "ElectricityFulfillmentPercent", "electricity_fulfillment_percent"),
+                (int, float),
+            )
+            else None
         ),
         "transit_lines": pick(mobility, "LinesTotal", "lines_total"),
         "workforce_potential": pick(workforce, "TotalPotentialWorkers", "total_potential_workers"),

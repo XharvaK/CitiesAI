@@ -27,14 +27,18 @@ from ..version import __version__
 from ..watch import get_watch_service
 from .api import (
     api_ask_stream,
+    api_briefing,
     api_clear_chat,
     api_dashboard,
     api_export_report,
     api_feedback,
+    api_feedback_answer,
     api_insights,
     api_install_mod,
     api_issues,
     api_llm_presets,
+    api_notifications,
+    api_notifications_mark_read,
     api_onboarding_complete,
     api_save_key,
     api_setup_preview,
@@ -53,9 +57,30 @@ DEFAULT_PORT = 8765
 WindowMode = Literal["native", "browser", "none"]
 
 
+def _static_root():
+    return resources.files("citiesai.gui.static")
+
+
 def _static_file(name: str) -> bytes:
-    path = resources.files("citiesai.gui.static").joinpath(name)
+    path = _static_root().joinpath(name)
     return path.read_bytes()
+
+
+def _index_html() -> bytes:
+    root = _static_root()
+    index = (root / "index.html").read_text(encoding="utf-8")
+    for asset in ("app.css", "app.js"):
+        asset_path = root / asset
+        version = int(asset_path.stat().st_mtime)
+        index = index.replace(
+            f'href="/static/{asset}"',
+            f'href="/static/{asset}?v={version}"',
+        )
+        index = index.replace(
+            f'src="/static/{asset}"',
+            f'src="/static/{asset}?v={version}"',
+        )
+    return index.encode("utf-8")
 
 
 def _guess_type(name: str) -> str:
@@ -112,8 +137,9 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
         if ".." in name or name.startswith(("/", "\\")) or "\\" in name:
             self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid path"})
             return
-        safe_name = Path(name).name
-        if not safe_name or safe_name != Path(name).name:
+        bare_name = name.split("?", 1)[0]
+        safe_name = Path(bare_name).name
+        if not safe_name or safe_name != Path(bare_name).name:
             self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid path"})
             return
         try:
@@ -128,7 +154,7 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
         route = parsed.path.rstrip("/") or "/"
 
         if route == "/":
-            self._send_static("index.html")
+            self._send_bytes(HTTPStatus.OK, _index_html(), "text/html; charset=utf-8")
             return
         if route == "/hud":
             self._send_static("hud.html")
@@ -142,7 +168,9 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/status": api_status,
             "/api/dashboard": api_dashboard,
             "/api/insights": api_insights,
+            "/api/briefing": api_briefing,
             "/api/issues": api_issues,
+            "/api/notifications": api_notifications,
             "/api/suggestions": api_suggestions,
             "/api/setup": api_setup_preview,
             "/api/settings/key/test": api_test_key,
@@ -162,6 +190,10 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
                     limit = HISTORY_MAX_POINTS
                 limit = max(10, min(limit, HISTORY_MAX_POINTS))
                 result = api_dashboard(limit=limit)
+            elif route == "/api/notifications":
+                qs = parse_qs(parsed.query)
+                unread_only = qs.get("unread", ["0"])[0] in {"1", "true", "yes"}
+                result = api_notifications(unread_only=unread_only)
             else:
                 result = handler()
         except Exception as exc:  # noqa: BLE001 - return JSON for GUI clients
@@ -203,6 +235,8 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/settings/key/test": api_test_key,
             "/api/install-mod": api_install_mod,
             "/api/feedback": api_feedback,
+            "/api/feedback/answer": api_feedback_answer,
+            "/api/notifications/read": api_notifications_mark_read,
             "/api/watch": api_watch_toggle,
             "/api/chat/clear": api_clear_chat,
             "/api/report/export": api_export_report,
@@ -274,8 +308,8 @@ def _run_native_window(server: CitiesAIHTTPServer, url: str, *, hud: bool = Fals
         return 1
 
     webview.create_window(
-        f"CitiesAI v{__version__}",
-        url,
+        title=f"CitiesAI v{__version__}",
+        url=url,
         width=1280,
         height=840,
         min_size=(900, 600),

@@ -504,7 +504,9 @@ function switchView(name, options = {}) {
     updateAskWelcome();
     $("question").focus();
   }
-  if (name === "settings") void loadSettings();
+  if (name === "settings") {
+    void loadSettings();
+  }
   if (name === "insights") {
     void loadInsights();
   }
@@ -720,6 +722,13 @@ const METRIC_DEFS = [
     description: "Share of road vehicles moving slowly due to blockers (0–100%). Requires CS2 Data Export schema 2.10.0+.",
   },
   {
+    key: "wellbeing",
+    label: "Wellbeing",
+    group: "social",
+    decimals: 1,
+    description: "Average citizen wellbeing index (0–100).",
+  },
+  {
     key: "unemployment_percent",
     label: "Unemployment",
     group: "social",
@@ -728,11 +737,37 @@ const METRIC_DEFS = [
     description: "Share of working-age citizens without jobs.",
   },
   {
-    key: "wellbeing",
-    label: "Wellbeing",
+    key: "electricity_fulfillment_percent",
+    label: "Power fulfillment",
+    group: "services",
+    decimals: 0,
+    suffix: "%",
+    description: "Share of electricity consumption met by local production and batteries. Requires schema 2.11.0+.",
+  },
+  {
+    key: "water_fulfillment_percent",
+    label: "Water fulfillment",
+    group: "services",
+    decimals: 0,
+    suffix: "%",
+    description: "Share of fresh water consumption met by local production and imports.",
+  },
+  {
+    key: "sewage_fulfillment_percent",
+    label: "Sewage fulfillment",
+    group: "services",
+    decimals: 0,
+    suffix: "%",
+    description: "Share of sewage demand met by local treatment capacity.",
+  },
+  {
+    key: "crime_rate",
+    label: "Crime rate",
     group: "social",
-    decimals: 1,
-    description: "Average citizen wellbeing index (0–100).",
+    decimals: 0,
+    suffix: "%",
+    invertDelta: true,
+    description: "Official city crime rate (0–100%). Lower is better.",
   },
 ];
 
@@ -912,25 +947,238 @@ function closeDiagnosticsModal() {
   }
 }
 
-function renderDashboardAnomalies(anomalies) {
-  const anomBlock = $("dashboard-anomalies");
-  const anomList = $("dashboard-anomalies-list");
-  if (!anomBlock || !anomList) return;
-  if (anomalies.length) {
-    anomBlock.hidden = false;
-    anomList.innerHTML = anomalies.map((a) =>
-      `<li class="finding-row insight-anomaly-row">
-        <div class="finding-copy"><strong>${escapeHtml(a.title)}</strong> — ${escapeHtml(a.detail)}</div>
-        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(a.ask_prompt || a.title)}">Ask</button>
-      </li>`
-    ).join("");
-    anomList.querySelectorAll(".insight-ask").forEach((btn) => {
-      btn.addEventListener("click", () => askFromPrompt(btn.dataset.prompt));
-    });
-  } else {
-    anomBlock.hidden = true;
-    anomList.innerHTML = "";
+function renderMayorsBriefing(briefing) {
+  const el = $("mayors-briefing");
+  if (!el) return;
+  if (!briefing || !briefing.has_content) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
   }
+  const parts = [];
+  if (briefing.top_issues?.length) {
+    parts.push(
+      `<strong>Priorities:</strong> ${briefing.top_issues
+        .slice(0, 3)
+        .map((issue) => escapeHtml(issue.title))
+        .join(" · ")}`
+    );
+  }
+  if (briefing.resolved?.length) {
+    parts.push(
+      `<strong>Resolved:</strong> ${briefing.resolved
+        .map((item) => `${escapeHtml(item.title)} ✓`)
+        .join(" · ")}`
+    );
+  }
+  if (briefing.grade_deltas?.length) {
+    parts.push(
+      `<strong>Grades:</strong> ${briefing.grade_deltas
+        .map((row) => `${escapeHtml(row.label)} ${escapeHtml(row.grade)} (${escapeHtml(row.delta)})`)
+        .join(" · ")}`
+    );
+  }
+  el.hidden = false;
+  el.innerHTML = `<div class="briefing-head"><strong>Mayor's briefing</strong></div>${parts.map((p) => `<p class="briefing-line">${p}</p>`).join("")}`;
+}
+
+function updateNotificationBadge(count) {
+  const btn = $("open-notifications");
+  if (!btn) return;
+  const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  btn.textContent = `ALERTS (${safeCount})`;
+  btn.setAttribute("aria-label", `Alerts (${safeCount})`);
+  btn.classList.toggle("has-alerts", safeCount > 0);
+}
+
+async function loadNotifications() {
+  try {
+    const data = await fetchJson("/api/notifications");
+    updateNotificationBadge(data.unread_count || 0);
+    const list = $("notifications-list");
+    if (!list) return data;
+    const items = data.notifications || [];
+    if (!items.length) {
+      list.innerHTML = `<li class="muted">No alerts yet.</li>`;
+      return data;
+    }
+    list.innerHTML = items
+      .map(
+        (item) => `<li class="finding-row severity-${escapeAttr(item.severity || "info")} ${item.unread ? "notification-unread" : ""}">
+          <div class="finding-copy">
+            <strong>${escapeHtml(item.title)}</strong>
+            <p class="muted small">${escapeHtml(item.message)}</p>
+          </div>
+        </li>`
+      )
+      .join("");
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function openNotificationsModal() {
+  const modal = $("notifications-modal");
+  if (!modal) return;
+  void loadNotifications();
+  modal.removeAttribute("hidden");
+  bindModalFocusTrap(modal, closeNotificationsModal);
+  $("notifications-modal-close")?.focus();
+}
+
+function closeNotificationsModal() {
+  const modal = $("notifications-modal");
+  if (!modal || modal.hasAttribute("hidden")) return;
+  modal.setAttribute("hidden", "");
+}
+
+function renderGradeHistoryChart(svg, gradeHistory) {
+  if (!svg) return;
+  const points = gradeHistory?.points || [];
+  const scores = points
+    .map((point) => point.overall_score)
+    .filter((value) => typeof value === "number");
+  if (scores.length < 2) {
+    svg.innerHTML = "";
+    return;
+  }
+  const width = 560;
+  const height = 120;
+  const min = Math.min(...scores);
+  const max = Math.max(...scores);
+  const span = Math.max(max - min, 1);
+  const coords = scores
+    .map((score, index) => {
+      const x = (index / (scores.length - 1)) * (width - 20) + 10;
+      const y = height - 10 - ((score - min) / span) * (height - 20);
+      return `${x},${y}`;
+    })
+    .join(" ");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.innerHTML = `<polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${coords}" />`;
+}
+
+function renderAccessGapCard(accessGaps) {
+  if (!accessGaps?.ok) {
+    return `<article class="card"><h2>Next line advisor</h2><p class="muted">${escapeHtml(accessGaps?.summary || "Transit access gap data unavailable.")}</p></article>`;
+  }
+  const isCapturing = accessGaps.status === "partial";
+  const hotspots = (accessGaps.hotspots || []).slice(0, 5);
+  const rows = hotspots
+    .map(
+      (row) => `<li class="finding-row severity-${escapeAttr(row.severity || "info")}">
+        <div class="finding-copy">
+          <strong>${escapeHtml(row.label)}</strong> — ${escapeHtml(row.detail)}
+          <p class="muted small">${escapeHtml(row.suggestion || "")}</p>
+        </div>
+        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(row.ask_prompt || accessGaps.ask_prompt)}">Ask</button>
+      </li>`
+    )
+    .join("");
+  return `<article class="card">
+    <h2>Next line advisor</h2>
+    <p class="muted">${escapeHtml(accessGaps.summary || "")}</p>
+    <ul class="finding-list">${rows || `<li class="muted">${isCapturing ? "Capture in progress…" : "No hotspots captured yet."}</li>`}</ul>
+  </article>`;
+}
+
+function renderDemandFactorsCard(demandFactors) {
+  if (!demandFactors?.ok) {
+    return `<article class="card"><h2>RCI demand</h2><p class="muted">${escapeHtml(demandFactors?.summary || "Demand factor export unavailable.")}</p></article>`;
+  }
+  const rows = (demandFactors.zones || [])
+    .map(
+      (zone) => `<li class="finding-row severity-${escapeAttr(zone.severity || "info")}">
+        <div class="finding-copy"><strong>${escapeHtml(zone.label)}</strong> — ${escapeHtml(zone.detail)}</div>
+        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(demandFactors.ask_prompt)}">Ask</button>
+      </li>`
+    )
+    .join("");
+  return `<article class="card">
+    <h2>RCI demand</h2>
+    <p class="muted">${escapeHtml(demandFactors.summary || "")}</p>
+    <ul class="finding-list">${rows}</ul>
+  </article>`;
+}
+
+function renderUtilitiesCard(utilities) {
+  if (!utilities?.ok) {
+    return `<article class="card"><h2>Utilities &amp; services</h2><p class="muted">${escapeHtml(utilities?.summary || "Utilities export unavailable.")}</p></article>`;
+  }
+  const serviceRows = (utilities.services || [])
+    .map((row) => {
+      const statusClass = row.severity === "warn" ? "warn" : "ok";
+      return `<li class="service-status-row ${statusClass}">
+        <strong>${escapeHtml(row.label)}</strong>
+        <span class="muted">${escapeHtml(row.detail)}</span>
+      </li>`;
+    })
+    .join("");
+  const findings = (utilities.findings || [])
+    .map(
+      (row) => `<li class="finding-row severity-${escapeAttr(row.severity || "info")}">
+        <div class="finding-copy"><strong>${escapeHtml(row.title)}</strong> — ${escapeHtml(row.detail)}</div>
+        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(row.ask_prompt || utilities.ask_prompt)}">Ask</button>
+      </li>`
+    )
+    .join("");
+  return `<article class="card">
+    <h2>Utilities &amp; services</h2>
+    <p class="muted">${escapeHtml(utilities.summary || "")}</p>
+    <ul class="service-status-list">${serviceRows}</ul>
+    ${findings ? `<ul class="finding-list">${findings}</ul>` : ""}
+  </article>`;
+}
+
+function renderResolvedIssues(resolved) {
+  const block = $("issues-resolved");
+  const list = $("issues-resolved-list");
+  if (!block || !list) return;
+  if (!resolved?.length) {
+    block.hidden = true;
+    list.innerHTML = "";
+    return;
+  }
+  block.hidden = false;
+  list.innerHTML = resolved
+    .map(
+      (item) => `<li class="finding-row">
+        <div class="finding-copy"><strong>${escapeHtml(item.title)}</strong> <span class="muted small">resolved</span></div>
+      </li>`
+    )
+    .join("");
+}
+
+async function submitAnswerFeedback(rating, question, answer) {
+  try {
+    await fetchJson("/api/feedback/answer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rating, question, answer }),
+    });
+    toast(rating === "up" ? "Thanks for the feedback" : "Feedback saved", "ok");
+  } catch (err) {
+    toast(String(err.message || err), "err");
+  }
+}
+
+function attachAnswerFeedback(assistantEl, question, answer) {
+  if (!assistantEl || assistantEl.querySelector(".answer-feedback")) return;
+  const wrap = document.createElement("div");
+  wrap.className = "answer-feedback";
+  wrap.innerHTML = `<button type="button" class="btn ghost btn-sm" data-rating="up" title="Helpful">👍</button>
+    <button type="button" class="btn ghost btn-sm" data-rating="down" title="Not helpful">👎</button>`;
+  assistantEl.appendChild(wrap);
+  wrap.querySelectorAll("button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      void submitAnswerFeedback(btn.dataset.rating, question, answer);
+      wrap.querySelectorAll("button").forEach((other) => {
+        other.disabled = true;
+      });
+      btn.classList.add("active");
+    });
+  });
 }
 
 async function clearAskUi() {
@@ -969,7 +1217,6 @@ function renderDashboard(data) {
     $("brief-technical").textContent = "";
     const metaEl = $("dashboard-meta");
     if (metaEl) metaEl.textContent = "";
-    renderDashboardAnomalies([]);
     return;
   }
 
@@ -1023,11 +1270,23 @@ function renderDashboard(data) {
   const digest = data.session_digest;
   if (digest && digest.has_changes && digest.summary && digest.summary.length) {
     digestEl.hidden = false;
-    digestEl.innerHTML = `<strong>Since last session:</strong> ${digest.summary.map((s) => escapeHtml(s)).join(" · ")}`;
+    const resolvedLine =
+      digest.resolved?.length
+        ? ` · <strong>Resolved:</strong> ${digest.resolved.map((item) => `${escapeHtml(item.title)} ✓`).join(" · ")}`
+        : "";
+    digestEl.innerHTML = `<strong>Since last session:</strong> ${digest.summary.map((s) => escapeHtml(s)).join(" · ")}${resolvedLine}`;
+  } else if (digest?.resolved?.length) {
+    digestEl.hidden = false;
+    digestEl.innerHTML = `<strong>Resolved since last session:</strong> ${digest.resolved
+      .map((item) => `${escapeHtml(item.title)} ✓`)
+      .join(" · ")}`;
   } else {
     digestEl.hidden = true;
     digestEl.innerHTML = "";
   }
+
+  renderMayorsBriefing(data.briefing);
+  updateNotificationBadge(data.notifications?.unread_count || 0);
 
   const cardStrip = $("report-card-strip");
   const card = data.report_card;
@@ -1059,8 +1318,6 @@ function renderDashboard(data) {
     forecastEl.innerHTML = "";
   }
 
-  renderDashboardAnomalies(data.anomalies || []);
-
   if (!$("metric-modal").hasAttribute("hidden") && metricModalReturnFocus) {
     openMetricModal(metricModalReturnFocus.dataset.metricKey, metricModalReturnFocus);
   }
@@ -1071,6 +1328,7 @@ function renderIssueCard(issue) {
     issue.severity === "error" ? "Error" : issue.severity === "warn" ? "Warning" : "Note";
   const detailParts = [issue.detail];
   if (issue.hint) detailParts.push(issue.hint);
+  if (issue.session_count > 1) detailParts.push(`Ongoing for ${issue.session_count} sessions`);
   const detailText = detailParts.filter(Boolean).join(" — ");
 
   const actions = [];
@@ -1143,6 +1401,7 @@ async function refreshIssues({ toastOnError = false } = {}) {
   try {
     const data = await fetchJson("/api/issues");
     applyIssuesData(data);
+    renderResolvedIssues(data.resolved_history || []);
     return data;
   } catch {
     try {
@@ -1174,8 +1433,7 @@ async function loadDashboard() {
   if (refreshInFlight) return;
   refreshInFlight = true;
   try {
-    const limit = Number($("dashboard-range")?.value || 1000);
-    const data = await fetchJson(`/api/dashboard?limit=${limit}`);
+    const data = await fetchJson("/api/dashboard");
     pollErrorActive = false;
     renderDashboard(data);
     if (Array.isArray(data.issues)) {
@@ -1426,6 +1684,8 @@ async function askStream(question) {
             answerEl.innerHTML =
               `<span class="muted">No answer returned. Check Settings for your API key or try again.</span>`;
           }
+        } else {
+          attachAnswerFeedback(assistant, question, answer);
         }
         finishStream();
       }
@@ -1550,9 +1810,12 @@ async function loadInsights() {
     }
     const card = data.report_card;
     const transit = data.transit;
+    const accessGaps = data.access_gaps;
+    const demandFactors = data.demand_factors;
+    const utilities = data.utilities_services;
     const housing = data.housing;
-    const budget = data.budget;
     const anomalies = data.anomalies || [];
+    const gradeHistory = data.grade_history;
 
     const domainHtml = card.domains.map((d) => {
       const delta = d.grade_delta ? ` <span class="muted small">${escapeHtml(d.grade_delta)}</span>` : "";
@@ -1594,8 +1857,15 @@ async function loadInsights() {
       <article class="card">
         <h2>Report card — ${escapeHtml(card.overall_grade)} (${card.overall_score}/100)</h2>
         <div class="insights-domains">${domainHtml}</div>
+        <div class="grade-history-wrap">
+          <p class="muted small">Overall score trend</p>
+          <svg id="grade-history-chart" class="grade-history-chart" aria-hidden="true"></svg>
+        </div>
       </article>
+      ${renderDemandFactorsCard(demandFactors)}
+      ${renderUtilitiesCard(utilities)}
       ${anomalies.length ? `<article class="card"><h2>Anomalies</h2><ul class="finding-list">${anomalyHtml}</ul></article>` : ""}
+      ${renderAccessGapCard(accessGaps)}
       <article class="card">
         <h2>Transit doctor</h2>
         <p class="muted">${escapeHtml(transit.summary || "")}</p>
@@ -1604,16 +1874,12 @@ async function loadInsights() {
       <article class="card">
         <h2>Housing &amp; labor</h2>
         <ul class="finding-list">${findingHtml(housing.findings) || "<li class='muted'>Balanced</li>"}</ul>
-      </article>
-      <article class="card">
-        <h2>Budget</h2>
-        <p>${escapeHtml(budget.summary || "")}</p>
-        <ul class="finding-list">${findingHtml(budget.findings)}</ul>
       </article>`;
 
     root.querySelectorAll(".insight-ask").forEach((btn) => {
       btn.addEventListener("click", () => askFromPrompt(btn.dataset.prompt));
     });
+    renderGradeHistoryChart($("grade-history-chart"), gradeHistory);
   } catch (err) {
     root.innerHTML = `<p class="muted">${escapeHtml(String(err.message || err))}</p>`;
   }
@@ -1816,6 +2082,19 @@ document.querySelectorAll("[data-view-jump]").forEach((btn) => {
   btn.addEventListener("click", () => switchView(btn.dataset.viewJump));
 });
 
+
+$("open-notifications")?.addEventListener("click", () => openNotificationsModal());
+$("notifications-modal-close")?.addEventListener("click", closeNotificationsModal);
+document.querySelector("[data-close-notifications-modal]")?.addEventListener("click", closeNotificationsModal);
+$("notifications-mark-read")?.addEventListener("click", async () => {
+  try {
+    await fetchJson("/api/notifications/read", { method: "POST", body: "{}" });
+    await loadNotifications();
+    toast("Alerts marked read", "ok");
+  } catch (err) {
+    toast(String(err.message || err), "err");
+  }
+});
 
 $("ask-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -2055,8 +2334,6 @@ $("diagnostics-modal").querySelectorAll("[data-close-diagnostics-modal]").forEac
 $("open-diagnostics").addEventListener("click", () => {
   openDiagnosticsModal($("open-diagnostics"));
 });
-
-$("dashboard-range")?.addEventListener("change", () => void loadDashboard());
 
 async function init() {
   loadChatHistory();

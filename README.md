@@ -169,6 +169,7 @@ Free-tier rate limits apply on Mistral’s side. If Ask fails, check **Settings 
 | `citiesai history` | Historian metric series for the current city |
 | `citiesai diff --before … --after …` | Compare two snapshot files |
 | `citiesai transit` | Transit line doctor report |
+| `citiesai brief` | Mayor's briefing — session digest, priorities, resolved issues |
 | `citiesai report` | Letter-grade report card (CLI) |
 | `citiesai mcp` | MCP server for agents (`get_city_brief`, `get_history`, …) |
 
