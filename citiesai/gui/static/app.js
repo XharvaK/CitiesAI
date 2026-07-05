@@ -1967,24 +1967,33 @@ function renderUpdateSettings(info) {
 
   if (!info) {
     status.textContent = "Checking for updates…";
+    status.className = "muted small";
     installBtn.hidden = true;
     return;
   }
-  if (info.error) {
+  if (info.status_message) {
+    status.textContent = info.status_message;
+    status.className = info.warning || info.error ? "muted small update-status-warn" : "muted small";
+  } else if (info.error) {
     status.textContent = info.error;
+    status.className = "muted small update-status-warn";
     installBtn.hidden = true;
     return;
+  } else if (info.update_available) {
+    status.textContent = `v${info.latest_version} is available on GitHub.`;
+    status.className = "muted small";
+  } else if (info.latest_version) {
+    status.textContent = `No updates available — you're on the latest release (v${info.latest_version}).`;
+    status.className = "muted small";
+  } else {
+    status.textContent = "No updates available.";
+    status.className = "muted small";
   }
   if (info.update_available) {
-    status.textContent = `v${info.latest_version} is available on GitHub.`;
     installBtn.hidden = false;
     installBtn.textContent = info.can_install ? "Download & install" : "Open release page";
     installBtn.dataset.mode = info.can_install ? "install" : "open";
-  } else if (info.latest_version) {
-    status.textContent = `You're on the latest release (v${info.latest_version}).`;
-    installBtn.hidden = true;
   } else {
-    status.textContent = "Up to date.";
     installBtn.hidden = true;
   }
 }

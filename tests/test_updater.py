@@ -57,7 +57,7 @@ def test_check_for_update_newer_release(monkeypatch: pytest.MonkeyPatch) -> None
         ],
     }
 
-    monkeypatch.setattr("citiesai.updater._fetch_json", lambda _url: release)
+    monkeypatch.setattr("citiesai.updater._fetch_latest_release", lambda **_: (release, None))
     monkeypatch.setattr("citiesai.updater._record_check_time", lambda: "2026-07-05T12:00:00Z")
     monkeypatch.setattr("citiesai.updater.__version__", "0.6.1", raising=False)
 
@@ -89,12 +89,53 @@ def test_check_for_update_dismissed_version(monkeypatch: pytest.MonkeyPatch, tmp
             }
         ],
     }
-    monkeypatch.setattr("citiesai.updater._fetch_json", lambda _url: release)
+    monkeypatch.setattr("citiesai.updater._fetch_latest_release", lambda **_: (release, None))
     monkeypatch.setattr("citiesai.updater._record_check_time", lambda: "2026-07-05T12:00:00Z")
     monkeypatch.setattr("citiesai.updater.__version__", "0.6.1", raising=False)
 
     result = check_for_update(force=True)
     assert result.update_available is False
+
+
+def test_fetch_latest_tag_via_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+    from citiesai import updater as updater_mod
+
+    class FakeResponse:
+        def __init__(self, url: str) -> None:
+            self._url = url
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def geturl(self) -> str:
+            return self._url
+
+    def fake_open(request: object, timeout: float = 20.0) -> FakeResponse:
+        return FakeResponse("https://github.com/XharvaK/CitiesAI/releases/tag/v0.6.1")
+
+    monkeypatch.setattr(updater_mod.urllib.request, "urlopen", fake_open)
+    assert updater_mod._fetch_latest_tag_via_redirect() == "v0.6.1"
+
+
+def test_check_for_update_api_403_uses_redirect_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_update_cache()
+    from citiesai import updater as updater_mod
+
+    def fake_fetch_latest_release(*, timeout: float = 20.0) -> tuple[dict | None, str | None]:
+        return updater_mod._minimal_release_from_tag("v0.6.1"), "GitHub API rate limit reached."
+
+    monkeypatch.setattr(updater_mod, "_fetch_latest_release", fake_fetch_latest_release)
+    monkeypatch.setattr(updater_mod, "_record_check_time", lambda: "2026-07-05T12:00:00Z")
+    monkeypatch.setattr(updater_mod, "__version__", "0.6.1", raising=False)
+
+    result = check_for_update(force=True)
+    assert result.ok is True
+    assert result.update_available is False
+    assert result.latest_version == "0.6.1"
+    assert "No updates available" in (result.status_message or "")
 
 
 def test_api_update_check(monkeypatch: pytest.MonkeyPatch) -> None:

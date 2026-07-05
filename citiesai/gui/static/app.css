@@ -1870,6 +1870,10 @@ select.control.select-control {
   flex-wrap: wrap;
 }
 
+.update-status-warn {
+  color: var(--warn);
+}
+
 .report-card-strip {
   display: flex;
   flex-wrap: wrap;

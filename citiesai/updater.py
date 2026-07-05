@@ -19,6 +19,7 @@ from .version import __version__
 
 GITHUB_REPO = "XharvaK/CitiesAI"
 RELEASES_LATEST_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+RELEASES_LATEST_PAGE = f"https://github.com/{GITHUB_REPO}/releases/latest"
 RELEASES_PAGE_URL = f"https://github.com/{GITHUB_REPO}/releases"
 INSTALLER_PREFIX = "CitiesAI-Setup-"
 INSTALLER_SUFFIX = ".exe"
@@ -41,6 +42,8 @@ class UpdateCheckResult:
     installer_name: str | None = None
     installer_size: int | None = None
     error: str | None = None
+    warning: str | None = None
+    status_message: str | None = None
     packaged: bool = False
     can_install: bool = False
     check_on_startup: bool = True
@@ -61,6 +64,8 @@ class UpdateCheckResult:
             "installer_name": self.installer_name,
             "installer_size": self.installer_size,
             "error": self.error,
+            "warning": self.warning,
+            "status_message": self.status_message,
             "packaged": self.packaged,
             "can_install": self.can_install,
             "check_on_startup": self.check_on_startup,
@@ -119,24 +124,115 @@ def find_installer_asset(release: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _github_headers() -> dict[str, str]:
+def _user_agent() -> str:
+    return f"CitiesAI/{__version__} (+https://github.com/{GITHUB_REPO})"
+
+
+def _github_headers(*, use_token: bool = True) -> dict[str, str]:
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": f"CitiesAI/{__version__} (+https://github.com/{GITHUB_REPO})",
+        "User-Agent": _user_agent(),
     }
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    if use_token:
+        token = os.environ.get("GITHUB_TOKEN", "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
     return headers
 
 
-def _fetch_json(url: str, *, timeout: float = 20.0) -> dict[str, Any]:
-    request = urllib.request.Request(url, headers=_github_headers(), method="GET")
+def _fetch_json(url: str, *, timeout: float = 20.0, use_token: bool = True) -> dict[str, Any]:
+    request = urllib.request.Request(url, headers=_github_headers(use_token=use_token), method="GET")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
     if not isinstance(payload, dict):
         raise RuntimeError("Unexpected GitHub response")
     return payload
+
+
+def _fetch_latest_tag_via_redirect(*, timeout: float = 20.0) -> str | None:
+    request = urllib.request.Request(
+        RELEASES_LATEST_PAGE,
+        headers={"User-Agent": _user_agent()},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            final_url = response.geturl()
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+    marker = "/releases/tag/"
+    if marker not in final_url:
+        return None
+    raw = final_url.rsplit(marker, 1)[-1].split("?", 1)[0].split("#", 1)[0]
+    return raw or None
+
+
+def _installer_asset_for_tag(raw_tag: str) -> dict[str, Any]:
+    version = normalize_release_tag(raw_tag)
+    name = f"{INSTALLER_PREFIX}{version}{INSTALLER_SUFFIX}"
+    download_url = f"https://github.com/{GITHUB_REPO}/releases/download/{raw_tag}/{name}"
+    return {"name": name, "browser_download_url": download_url, "size": None}
+
+
+def _minimal_release_from_tag(raw_tag: str) -> dict[str, Any]:
+    return {
+        "tag_name": raw_tag,
+        "html_url": f"https://github.com/{GITHUB_REPO}/releases/tag/{raw_tag}",
+        "assets": [_installer_asset_for_tag(raw_tag)],
+        "body": "",
+        "published_at": "",
+    }
+
+
+def _fetch_latest_release(*, timeout: float = 20.0) -> tuple[dict[str, Any] | None, str | None]:
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    attempts: list[bool] = [True] if token else [False]
+    if token:
+        attempts.append(False)
+
+    last_error: str | None = None
+    for use_token in attempts:
+        try:
+            return _fetch_json(RELEASES_LATEST_URL, timeout=timeout, use_token=use_token), None
+        except urllib.error.HTTPError as exc:
+            if exc.code in {401, 403} and use_token and token:
+                last_error = "GitHub rejected the configured token; retrying without it."
+                continue
+            if exc.code == 404:
+                return None, "No GitHub release found yet."
+            if exc.code in {403, 429}:
+                last_error = "GitHub API rate limit reached."
+                break
+            return None, f"GitHub API returned {exc.code}."
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            return None, f"Could not reach GitHub: {exc}"
+
+    raw_tag = _fetch_latest_tag_via_redirect(timeout=timeout)
+    if raw_tag:
+        warning = last_error or "Used GitHub release page fallback."
+        return _minimal_release_from_tag(raw_tag), warning
+
+    if last_error:
+        return None, last_error
+    return None, "Could not reach GitHub."
+
+
+def _status_message(
+    *,
+    current: str,
+    latest: str | None,
+    update_available: bool,
+    warning: str | None = None,
+) -> str:
+    if latest and not update_available:
+        if compare_versions(current, latest) == 0:
+            return f"No updates available — you're on the latest release (v{latest})."
+        return f"You're on v{current}; latest on GitHub is v{latest}."
+    if latest and update_available:
+        return f"v{latest} is available on GitHub."
+    if warning:
+        return f"Could not verify updates right now. You're on v{current}."
+    return f"You're on v{current}."
 
 
 def _parse_checked_at(raw: str | None) -> datetime | None:
@@ -200,17 +296,20 @@ def check_for_update(*, force: bool = False) -> UpdateCheckResult:
                     **{**cached.to_dict(), "from_cache": True, "check_on_startup": cfg.check_updates_on_startup}
                 )
 
-    try:
-        release = _fetch_json(RELEASES_LATEST_URL)
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            result = _base_result(error="No GitHub release found yet.")
-        else:
-            result = _base_result(error=f"GitHub API returned {exc.code}.")
-        _store_cache(result)
-        return result
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-        result = _base_result(error=f"Could not reach GitHub: {exc}")
+    release, warning = _fetch_latest_release()
+    if release is None:
+        result = _base_result(error=warning)
+        result = UpdateCheckResult(
+            **{
+                **result.to_dict(),
+                "status_message": _status_message(
+                    current=__version__,
+                    latest=None,
+                    update_available=False,
+                    warning=warning,
+                ),
+            }
+        )
         _store_cache(result)
         return result
 
@@ -234,6 +333,12 @@ def check_for_update(*, force: bool = False) -> UpdateCheckResult:
         update_available = False
 
     checked_at = _record_check_time()
+    status = _status_message(
+        current=__version__,
+        latest=tag,
+        update_available=update_available,
+        warning=warning,
+    )
     result = UpdateCheckResult(
         ok=True,
         current_version=__version__,
@@ -245,6 +350,8 @@ def check_for_update(*, force: bool = False) -> UpdateCheckResult:
         published_at=str(release.get("published_at") or "") or None,
         installer_name=installer_name or None,
         installer_size=installer_size,
+        warning=warning,
+        status_message=status,
         packaged=is_packaged_build(),
         can_install=can_silent_install() and bool(download_url),
         check_on_startup=cfg.check_updates_on_startup,
@@ -281,7 +388,7 @@ def download_installer(
         raise ValueError("Unexpected installer filename.")
 
     target = updates_dir() / installer_name
-    request = urllib.request.Request(download_url, headers=_github_headers(), method="GET")
+    request = urllib.request.Request(download_url, headers=_github_headers(use_token=bool(os.environ.get("GITHUB_TOKEN"))), method="GET")
     with urllib.request.urlopen(request, timeout=120) as response:
         data = response.read()
     if expected_size is not None and len(data) != expected_size:
