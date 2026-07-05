@@ -2,8 +2,6 @@
 
 **CitiesAI** is a read-only advisor for **Cities: Skylines II**. It reads your live city stats, searches the official wiki and in-game encyclopedia locally, and (optionally) uses **your own** API key to turn that context into plain-language answers.
 
-No Cursor, no cloud account for CitiesAI itself, and no changes to your save — the app only reads export data while you play.
-
 ## What it does
 
 | Feature | Needs AI key? |
@@ -30,9 +28,9 @@ The **Issues** tab lists setup problems and **current city pressures** (water, h
 
 | Requirement | Notes |
 |-------------|--------|
-| **Windows 10/11** | Desktop app (WebView2; usually preinstalled on Win 11) — current release **0.6.2** |
+| **Windows 10/11** | 
 | **Cities: Skylines II** | Steam or Xbox PC (Game Pass) |
-| **CS2 Data Export mod** | Bundled in the Windows installer, or install manually — see [docs/INSTALL-MOD.md](docs/INSTALL-MOD.md) |
+| **CS2 Data Export mod** | Bundled in the Windows installer |
 | **Mistral API key** | Optional; free Experiment tier is enough for testing |
 
 ---
