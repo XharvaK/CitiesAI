@@ -1755,7 +1755,15 @@ async function askStream(question) {
   }
 }
 
-function formatTransitModes(modes) {
+function formatGameMinutes(minutes) {
+  if (minutes == null || !Number.isFinite(Number(minutes))) return "n/a";
+  const total = Math.round(Number(minutes));
+  if (total < 60) return `${total} min`;
+  const hours = Math.floor(total / 60);
+  const rem = total % 60;
+  return rem > 0 ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
   if (!modes || typeof modes !== "object") return "";
   return Object.entries(modes)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
@@ -1774,7 +1782,7 @@ function renderTransitGroup(group) {
         <td>${escapeHtml(line.line_name)}</td>
         <td>${escapeHtml(line.mode)}</td>
         <td>${Number(line.waiting || 0).toLocaleString()}</td>
-        <td>${line.round_trip_minutes == null ? "n/a" : `${Math.round(Number(line.round_trip_minutes))} min`}</td>
+        <td>${formatGameMinutes(line.round_trip_minutes)}</td>
       </tr>`
     )
     .join("");

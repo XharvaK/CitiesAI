@@ -64,6 +64,14 @@ _HEAVY_WAIT_THRESHOLD = 200
 _SLOW_ROUND_TRIP_MINUTES = 45
 
 
+def _format_game_minutes(minutes: float | int) -> str:
+    total = round(float(minutes))
+    if total < 60:
+        return f"{total} min"
+    hours, rem = divmod(total, 60)
+    return f"{hours}h {rem}m" if rem else f"{hours}h"
+
+
 def _num(value: Any) -> float | int | None:
     if isinstance(value, (int, float)):
         return value
@@ -151,7 +159,7 @@ def _line_diagnosis(line: dict[str, Any]) -> dict[str, Any]:
     if occupancy is not None and occupancy < 15 and vehicles >= 2 and waiting < 20:
         issues.append(f"Low occupancy ({occupancy:.0f}%)")
     if round_trip_min is not None and round_trip_min > _SLOW_ROUND_TRIP_MINUTES:
-        issues.append(f"Long round trip ({round_trip_min:.0f} min)")
+        issues.append(f"Long round trip ({_format_game_minutes(round_trip_min)})")
 
     return {
         "line_name": name,

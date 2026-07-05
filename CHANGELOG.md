@@ -2,6 +2,18 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.6.1] — 2026-07-05
+
+### Fixes
+
+- **Transit round trip** — export mod corrected tick→in-game-minute conversion (~60× inflation inherited from XTM UI helper); Insights table shows `8h 25m` style labels for long trips.
+
+### Install
+
+Download **`CitiesAI-Setup-0.6.1.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+
+---
+
 ## [0.6.0] — 2026-07-05
 
 ### Advisor release — dashboard to session coach

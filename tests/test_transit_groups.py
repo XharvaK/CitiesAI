@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from citiesai.analyzers.transit import (
+    _format_game_minutes,
     _line_diagnosis,
     analyze_transit_lines,
     group_transit_problems,
@@ -30,6 +31,12 @@ def _line(
         "expected_round_trip_time_minutes": round_trip,
         "active": active,
     }
+
+
+def test_format_game_minutes_uses_hours_when_long() -> None:
+    assert _format_game_minutes(45) == "45 min"
+    assert _format_game_minutes(60) == "1h"
+    assert _format_game_minutes(505) == "8h 25m"
 
 
 def test_primary_issue_prefers_heavy_wait_over_slow_round_trip() -> None:
