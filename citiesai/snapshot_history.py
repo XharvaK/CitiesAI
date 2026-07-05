@@ -17,8 +17,8 @@ _HISTORY_KEYS = (
     "expense",
     "wellbeing",
     "health",
-    "traffic_volume",
-    "employment_percent",
+    "congestion_percent",
+    "unemployment_percent",
 )
 
 

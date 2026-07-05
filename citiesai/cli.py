@@ -191,7 +191,7 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_transit(_args: argparse.Namespace) -> int:
+def _cmd_transit(args: argparse.Namespace) -> int:
     from .analyzers.transit import analyze_transit_lines
 
     cfg = load_config()
@@ -205,13 +205,46 @@ def _cmd_transit(_args: argparse.Namespace) -> int:
         return 2
     report = analyze_transit_lines(snapshot)
     print(f"# Transit Line Doctor\n\n{report.get('summary', '')}\n")
-    for line in report.get("lines", []):
-        print(f"## {line['line_name']} ({line['mode']}) — {line['severity']}")
-        print(line["diagnosis"])
-        if line.get("issues"):
-            for issue in line["issues"]:
-                print(f"- {issue}")
-        print("")
+
+    groups = report.get("problem_groups") or []
+    if groups:
+        print("## Problem groups\n")
+        for group in groups:
+            modes = group.get("modes") or {}
+            mode_text = ", ".join(f"{mode} {count}" for mode, count in sorted(modes.items()))
+            print(
+                f"### {group['title']} ({group['line_count']} lines, {group['severity']})"
+            )
+            print(group["diagnosis"])
+            if mode_text:
+                print(f"- modes: {mode_text}")
+            if group.get("total_waiting"):
+                print(f"- waiting: {group['total_waiting']:,}")
+            if group.get("action"):
+                print(f"- action: {group['action']}")
+            print("")
+
+    if args.lines:
+        print("## All lines\n")
+        for line in report.get("lines", []):
+            print(f"### {line['line_name']} ({line['mode']}) — {line['severity']}")
+            print(line["diagnosis"])
+            if line.get("issues"):
+                for issue in line["issues"]:
+                    print(f"- {issue}")
+            print("")
+    elif groups:
+        print("Use `citiesai transit --lines` to list every line.\n")
+    elif report.get("lines"):
+        for line in report.get("lines", []):
+            if line.get("severity") == "ok":
+                continue
+            print(f"## {line['line_name']} ({line['mode']}) — {line['severity']}")
+            print(line["diagnosis"])
+            if line.get("issues"):
+                for issue in line["issues"]:
+                    print(f"- {issue}")
+            print("")
     return 0
 
 
@@ -323,6 +356,11 @@ def build_parser() -> argparse.ArgumentParser:
     diff.set_defaults(func=_cmd_diff)
 
     transit = sub.add_parser("transit", help="Transit Line Doctor report")
+    transit.add_argument(
+        "--lines",
+        action="store_true",
+        help="List every line after the grouped summary",
+    )
     transit.set_defaults(func=_cmd_transit)
 
     report = sub.add_parser("report", help="City Report Card")

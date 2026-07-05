@@ -30,6 +30,7 @@ def test_transit_doctor_finds_line(vendor_sample: dict) -> None:
     assert report["ok"] is True
     assert report["line_count"] >= 1
     assert report["lines"][0]["line_name"]
+    assert "problem_groups" in report
 
 
 def test_report_card_transit_na_when_no_lines(vendor_sample: dict) -> None:
@@ -50,6 +51,19 @@ def test_report_card_grades(vendor_sample: dict) -> None:
     assert card["overall_grade"] in {"A", "B", "C", "D", "F"}
     assert len(card["domains"]) == 5
     assert "domain_scores" in card
+
+
+def test_report_card_economy_surplus_projects_runway(vendor_sample: dict) -> None:
+    snapshot = json.loads(json.dumps(vendor_sample))
+    finance = snapshot["official_city_statistics"]["finance"]
+    finance["money"] = 3_500_000
+    finance["income"] = 1_580_000
+    finance["expense"] = 770_000
+    meta = snapshot_meta(snapshot, path=VENDOR_SAMPLE)
+    card = build_report_card(snapshot, meta)
+    economy = next(d for d in card["domains"] if d["id"] == "economy")
+    assert economy["grade"] in {"A", "B"}
+    assert economy["score"] >= 80
 
 
 def test_diff_snapshots(vendor_sample: dict) -> None:

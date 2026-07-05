@@ -22,7 +22,7 @@ VENDOR_SAMPLE = (
 
 
 def test_version() -> None:
-    assert __version__ == "0.4"
+    assert __version__ == "0.5"
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     assert data["project"]["version"] == __version__
@@ -30,7 +30,7 @@ def test_version() -> None:
 
 def test_api_version() -> None:
     data = api_version()
-    assert data["version"] == "0.4"
+    assert data["version"] == "0.5"
 
 
 def test_collect_status_report_shape() -> None:
@@ -49,6 +49,8 @@ def test_extract_headline_metrics(vendor_sample: dict) -> None:
     metrics = extract_headline_metrics(vendor_sample, meta)
     assert "population" in metrics
     assert metrics["city_name"] == "Evergreen Bay"
+    assert metrics["unemployment_percent"] == pytest.approx(5.28)
+    assert metrics["congestion_percent"] == pytest.approx(4.2)
 
 
 @pytest.fixture
@@ -90,7 +92,7 @@ def test_snapshot_history_ring() -> None:
             {
                 "timestamp": 1.0,
                 "exported_at_utc": "a",
-                "metrics": {"population": 1, "employment_percent": 55},
+                "metrics": {"population": 1, "unemployment_percent": 45},
             },
         )()
     )
@@ -101,15 +103,15 @@ def test_snapshot_history_ring() -> None:
             {
                 "timestamp": 2.0,
                 "exported_at_utc": "b",
-                "metrics": {"population": 3, "employment_percent": 58},
+                "metrics": {"population": 3, "unemployment_percent": 42},
             },
         )()
     )
     data = history.to_dict()
     assert data["count"] == 2
-    assert "employment_percent" in data["series"]
-    assert data["series"]["employment_percent"] == [55, 58]
-    assert data["deltas"]["employment_percent"] == 3
+    assert "unemployment_percent" in data["series"]
+    assert data["series"]["unemployment_percent"] == [45, 42]
+    assert data["deltas"]["unemployment_percent"] == -3
 
 
 def test_save_env_var(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

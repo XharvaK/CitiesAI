@@ -133,6 +133,13 @@ function formatDelta(delta, options = {}) {
   return `¢${signed}`;
 }
 
+function metricDeltaClass(delta, invert = false) {
+  if (delta == null || Number.isNaN(delta) || delta === 0) return "";
+  const up = delta > 0;
+  if (invert) return up ? "down" : "up";
+  return up ? "up" : "down";
+}
+
 function formatMetricValue(val, def) {
   const formatOpts = { decimals: def.decimals ?? 0 };
   const formatted = formatNum(val, formatOpts);
@@ -704,18 +711,21 @@ const METRIC_DEFS = [
     description: "Average citizen health index (0–100).",
   },
   {
-    key: "traffic_volume",
-    label: "Road / transit ratio",
+    key: "congestion_percent",
+    label: "Traffic congestion",
     group: "mobility",
-    decimals: 1,
-    description: "Road vehicles per transit vehicle — not congestion.",
+    decimals: 0,
+    suffix: "%",
+    invertDelta: true,
+    description: "Share of road vehicles moving slowly due to blockers (0–100%). Requires CS2 Data Export schema 2.10.0+.",
   },
   {
-    key: "employment_percent",
-    label: "Employment",
+    key: "unemployment_percent",
+    label: "Unemployment",
     group: "social",
     suffix: "%",
-    description: "Share of working-age citizens with jobs.",
+    invertDelta: true,
+    description: "Share of working-age citizens without jobs.",
   },
   {
     key: "wellbeing",
@@ -741,7 +751,7 @@ function buildMetricCardHtml(def, m, deltas, series, options = {}) {
       : formatOpts.decimals > 0
         ? Number(delta)
         : Math.round(Number(delta));
-  const deltaCls = roundedDelta > 0 ? "up" : roundedDelta < 0 ? "down" : "";
+  const deltaCls = metricDeltaClass(roundedDelta, def.invertDelta);
   const historyValues = series[def.key] || [];
   const hasSparkline = historyValues.filter((v) => typeof v === "number").length >= 2;
   const deltaOpts = { decimals: def.decimals ?? 0, currency: Boolean(def.currency) };
@@ -758,6 +768,11 @@ function buildMetricCardHtml(def, m, deltas, series, options = {}) {
     }
   }
 
+  const deltaHtml =
+    def.hourlyKey && hourlyHtml
+      ? ""
+      : `<div class="metric-delta ${deltaCls}">${formatDelta(delta, deltaOpts)}</div>`;
+
   return `<button type="button" class="metric-card metric-group-${def.group}" data-metric-key="${def.key}" aria-label="View ${def.label} trend">
     <div class="metric-card-head">
       <span class="metric-label">${def.label}</span>
@@ -767,7 +782,7 @@ function buildMetricCardHtml(def, m, deltas, series, options = {}) {
       <span class="metric-value">${formatMetricValue(val, def)}</span>
       ${hourlyHtml}
     </div>
-    <div class="metric-delta ${deltaCls}">${formatDelta(delta, deltaOpts)}</div>
+    ${deltaHtml}
     <div class="metric-spark-wrap">
       <svg class="sparkline" viewBox="0 0 160 28" data-key="${def.key}" aria-hidden="true"></svg>
       ${hasSparkline ? "" : `<span class="sparkline-empty muted small">${sparklineEmptyLabel}</span>`}
@@ -800,19 +815,21 @@ function openMetricModalFromSeries(def, ctx, returnFocusEl) {
   $("metric-modal-desc").textContent = def.description || "";
 
   let valueRow = `<span class="metric-modal-value">${formatMetricValue(metrics[def.key], def)}</span>`;
+  let hourlyShown = false;
   if (def.hourlyKey) {
     const hourlyText = formatHourlyRate(metrics[def.hourlyKey], {
       decimals: formatOpts.decimals,
       currency: Boolean(def.hourlyCurrency || def.currency),
     });
     if (hourlyText) {
+      hourlyShown = true;
       valueRow += `<span class="metric-hourly ${hourlyRateClass(metrics[def.hourlyKey])}">${hourlyText}</span>`;
     }
   }
   const deltaOpts = { decimals: formatOpts.decimals, currency: Boolean(def.currency) };
   const deltaText = formatDelta(deltas[key], deltaOpts);
-  if (deltaText) {
-    const deltaCls = deltas[key] > 0 ? "up" : deltas[key] < 0 ? "down" : "";
+  if (deltaText && !hourlyShown) {
+    const deltaCls = metricDeltaClass(deltas[key], def.invertDelta);
     valueRow += `<span class="metric-modal-session-delta ${deltaCls}">${deltaText} ${deltaSinceLabel}</span>`;
   }
   $("metric-modal-values").innerHTML = valueRow;
@@ -1456,6 +1473,50 @@ async function askStream(question) {
   }
 }
 
+function formatTransitModes(modes) {
+  if (!modes || typeof modes !== "object") return "";
+  return Object.entries(modes)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([mode, count]) => `${mode} ${count}`)
+    .join(", ");
+}
+
+function renderTransitGroup(group) {
+  const modesText = formatTransitModes(group.modes);
+  const metaParts = [`${group.line_count} lines`];
+  if (modesText) metaParts.push(modesText);
+  if (group.total_waiting) metaParts.push(`${Number(group.total_waiting).toLocaleString()} waiting`);
+  const lineRows = (group.lines || [])
+    .map(
+      (line) => `<tr>
+        <td>${escapeHtml(line.line_name)}</td>
+        <td>${escapeHtml(line.mode)}</td>
+        <td>${Number(line.waiting || 0).toLocaleString()}</td>
+        <td>${line.round_trip_minutes == null ? "n/a" : `${Math.round(Number(line.round_trip_minutes))} min`}</td>
+      </tr>`
+    )
+    .join("");
+  return `<li class="transit-group-card severity-${escapeAttr(group.severity || "info")}">
+    <div class="finding-row transit-group-head">
+      <div class="finding-copy">
+        <strong>${escapeHtml(group.title)}</strong> — ${escapeHtml(group.diagnosis)}
+        <p class="transit-group-meta muted small">${escapeHtml(metaParts.join(" · "))}</p>
+        ${group.action ? `<p class="muted small">${escapeHtml(group.action)}</p>` : ""}
+      </div>
+      <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(group.ask_prompt || group.title)}">Ask</button>
+    </div>
+    <details class="transit-group-details">
+      <summary>Show all ${group.line_count} lines</summary>
+      <div class="insights-table-wrap">
+        <table class="insights-table transit-group-lines">
+          <thead><tr><th>Line</th><th>Mode</th><th>Waiting</th><th>Round trip</th></tr></thead>
+          <tbody>${lineRows}</tbody>
+        </table>
+      </div>
+    </details>
+  </li>`;
+}
+
 async function loadInsights() {
   const root = $("insights-content");
   root.innerHTML = `<div class="skeleton"></div>`.repeat(3);
@@ -1485,15 +1546,10 @@ async function loadInsights() {
       </div>`;
     }).join("");
 
-    const transitRows = (transit.lines || []).map((l) =>
-      `<tr class="severity-${escapeAttr(l.severity)}">
-        <td>${escapeHtml(l.line_name)}</td>
-        <td>${escapeHtml(l.mode)}</td>
-        <td>${escapeHtml(l.severity)}</td>
-        <td>${escapeHtml(l.diagnosis)}</td>
-        <td><button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(l.ask_prompt || `How can I improve line ${l.line_name}?`)}">Ask</button></td>
-      </tr>`
-    ).join("");
+    const transitGroups = (transit.problem_groups || []).map((group) => renderTransitGroup(group)).join("");
+    const transitGroupsHtml = transitGroups
+      ? `<ul class="finding-list transit-group-list">${transitGroups}</ul>`
+      : `<p class="muted">All transit lines look healthy.</p>`;
 
     const findingHtml = (items) => (items || []).map((f) =>
       `<li class="finding-row severity-${escapeAttr(f.severity || "info")}">
@@ -1521,7 +1577,7 @@ async function loadInsights() {
       <article class="card">
         <h2>Transit doctor</h2>
         <p class="muted">${escapeHtml(transit.summary || "")}</p>
-        <div class="insights-table-wrap"><table class="insights-table"><thead><tr><th>Line</th><th>Mode</th><th>Status</th><th>Diagnosis</th><th></th></tr></thead><tbody>${transitRows || `<tr><td colspan="5" class="muted">No line detail</td></tr>`}</tbody></table></div>
+        ${transitGroupsHtml}
       </article>
       <article class="card">
         <h2>Housing &amp; labor</h2>

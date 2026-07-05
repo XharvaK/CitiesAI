@@ -98,4 +98,4 @@ def test_brief_renders_pascal_case(empty_city: dict) -> None:
 
 def test_vendor_sample_is_valid_json() -> None:
     data = json.loads(VENDOR_SAMPLE.read_text(encoding="utf-8"))
-    assert data["schema_version"] == "2.9.0"
+    assert data["schema_version"] == "2.10.0"

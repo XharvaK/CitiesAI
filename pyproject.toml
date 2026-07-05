@@ -1,6 +1,6 @@
 [project]
 name = "citiesai"
-version = "0.4"
+version = "0.5"
 description = "Read-only Cities: Skylines II gameplay advisor - city snapshot + wiki knowledge"
 readme = "README.md"
 requires-python = ">=3.11"

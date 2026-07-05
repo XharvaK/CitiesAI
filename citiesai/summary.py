@@ -40,6 +40,30 @@ def _status_line(group: dict[str, Any]) -> str | None:
     return f"{status}{note}"
 
 
+def _parse_schema_version(version: str) -> tuple[int, ...]:
+    parts: list[int] = []
+    for piece in version.split("."):
+        try:
+            parts.append(int(piece))
+        except ValueError:
+            break
+    return tuple(parts)
+
+
+def congestion_export_notice(snapshot: dict[str, Any], meta: SnapshotMeta) -> str | None:
+    transport = pick_group(snapshot, "TransportProxies")
+    congestion = pick(transport, "CongestionIndex0To1", "congestion_index_0_to_1")
+    if congestion is not None:
+        return None
+    schema = meta.schema_version or ""
+    if schema and _parse_schema_version(schema) < _parse_schema_version("2.10.0"):
+        return (
+            "Traffic congestion is unavailable: update the CS2 Data Export mod "
+            "(export schema 2.10.0+)."
+        )
+    return "Traffic congestion is unavailable in this export."
+
+
 def build_city_brief(snapshot: dict[str, Any], meta: SnapshotMeta) -> str:
     lines: list[str] = []
     title = resolve_city_display_name(snapshot, meta)
@@ -53,6 +77,9 @@ def build_city_brief(snapshot: dict[str, Any], meta: SnapshotMeta) -> str:
         lines.append(f"- exported_at_utc: {meta.exported_at_utc}")
     if meta.age_seconds is not None:
         lines.append(f"- snapshot_age_seconds: {meta.age_seconds:.0f}")
+    congestion_notice = congestion_export_notice(snapshot, meta)
+    if congestion_notice:
+        lines.append(f"- note: {congestion_notice}")
     lines.append("")
 
     city = pick_group(snapshot, "City")
@@ -116,25 +143,24 @@ def build_city_brief(snapshot: dict[str, Any], meta: SnapshotMeta) -> str:
 
     educated = pick(education, "EducatedPercent", "educated_percent")
     employment = pick(education, "EmploymentRatePercent", "employment_rate_percent")
-    if educated is not None or employment is not None:
+    unemployment = (
+        round(100.0 - employment, 2) if isinstance(employment, (int, float)) else None
+    )
+    if educated is not None or unemployment is not None:
         lines.append(
-            f"- education: educated {_fmt_pct(educated)} | employment {_fmt_pct(employment)}"
+            f"- education: educated {_fmt_pct(educated)} | unemployment {_fmt_pct(unemployment)}"
         )
 
     congestion = pick(transport, "CongestionIndex0To1", "congestion_index_0_to_1")
     if congestion is not None:
         if isinstance(congestion, (int, float)):
-            lines.append(f"- congestion index: {congestion:.2f}")
+            lines.append(f"- traffic congestion: {congestion * 100:.0f}%")
         else:
-            lines.append(f"- congestion index: {congestion}")
+            lines.append(f"- traffic congestion: {congestion}")
 
-    traffic_volume = pick(mobility, "TrafficVolumeIndex", "traffic_volume_index")
     lines_total = pick(mobility, "LinesTotal", "lines_total")
-    if traffic_volume is not None or lines_total is not None:
-        lines.append(
-            f"- mobility: road/transit ratio {traffic_volume if traffic_volume is not None else 'n/a'} | "
-            f"transit lines {lines_total if lines_total is not None else 'n/a'}"
-        )
+    if lines_total is not None:
+        lines.append(f"- transit lines: {lines_total}")
 
     potential_workers = pick(workforce, "TotalPotentialWorkers", "total_potential_workers")
     employed = pick(workforce, "EmployedWorkers", "employed_workers")

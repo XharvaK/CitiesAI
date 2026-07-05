@@ -4,26 +4,27 @@ from .config import CitiesAIConfig, config_path, load_config
 from .dashboard import extract_headline_metrics
 from .issues import blocking_issue_count, collect_issues
 from .mod_install import mod_installed
-from .snapshot import load_snapshot_safe, snapshot_meta
+from .snapshot import load_snapshot_safe, snapshot_meta, SnapshotMeta
 from .status import collect_status_report
+from .summary import congestion_export_notice
 
 
-def _metrics_for_doctor(cfg: CitiesAIConfig) -> dict | None:
+def _metrics_for_doctor(cfg: CitiesAIConfig) -> tuple[dict | None, dict | None, SnapshotMeta | None]:
     export_path = cfg.resolved_export_path()
     if not export_path.is_file():
-        return None
+        return None, None, None
     snapshot, _err = load_snapshot_safe(export_path)
     if snapshot is None:
-        return None
+        return None, None, None
     meta = snapshot_meta(snapshot, path=export_path)
-    return extract_headline_metrics(snapshot, meta)
+    return extract_headline_metrics(snapshot, meta), snapshot, meta
 
 
 def run_doctor(cfg: CitiesAIConfig | None = None) -> int:
     cfg = cfg or load_config()
     report = collect_status_report(cfg)
     report["mod_installed"] = mod_installed()
-    metrics = _metrics_for_doctor(cfg)
+    metrics, snapshot, meta = _metrics_for_doctor(cfg)
     blocking = blocking_issue_count(collect_issues(report, metrics))
 
     print("CitiesAI doctor")
@@ -50,6 +51,10 @@ def run_doctor(cfg: CitiesAIConfig | None = None) -> int:
             print("  export age: unknown")
         if export.get("stale"):
             print("  warning: export is stale (>30 sec). Load city in-game or wait for next export cycle.")
+        if snapshot is not None and meta is not None:
+            congestion_notice = congestion_export_notice(snapshot, meta)
+            if congestion_notice:
+                print(f"  warning: {congestion_notice}")
     else:
         print("  (no export file)")
 

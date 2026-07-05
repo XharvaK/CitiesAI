@@ -62,13 +62,16 @@ def build_ask_suggestions(
     if isinstance(health, (int, float)) and health < 50:
         suggestions.append("Do I need more clinics or hospitals for my citizens?")
 
-    traffic = m.get("traffic_volume")
+    congestion = m.get("congestion_percent")
     lines = m.get("transit_lines") or 0
-    if isinstance(traffic, (int, float)) and traffic > 40 and not lines:
+    if isinstance(congestion, (int, float)) and congestion > 50 and not lines:
         suggestions.append("Should I add bus or rail lines to reduce traffic?")
 
-    employment = m.get("employment_percent")
-    if isinstance(employment, (int, float)) and employment < 85:
+    if isinstance(congestion, (int, float)) and congestion > 50:
+        suggestions.append("How can I reduce traffic congestion in my city?")
+
+    unemployment = m.get("unemployment_percent")
+    if isinstance(unemployment, (int, float)) and unemployment > 15:
         suggestions.append("How can I reduce unemployment in my city?")
 
     suggestions.extend(FALLBACK_SUGGESTIONS)

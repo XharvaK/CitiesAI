@@ -24,8 +24,8 @@ _HISTORY_METRIC_KEYS = (
     "expense",
     "wellbeing",
     "health",
-    "traffic_volume",
-    "employment_percent",
+    "congestion_percent",
+    "unemployment_percent",
     "homeless",
     "moving_away",
     "treasury_net_per_hour",
@@ -374,7 +374,7 @@ class CityHistorian:
             "wellbeing": "Wellbeing",
             "health": "Health",
             "homeless": "Homeless",
-            "employment_percent": "Employment",
+            "unemployment_percent": "Unemployment",
         }
         for key, label in labels.items():
             a, b = previous.get(key), current.get(key)
@@ -382,7 +382,7 @@ class CityHistorian:
                 delta = b - a
                 if key == "treasury":
                     summary.append(f"{label}: {delta:+,} (now {b:,.0f})")
-                elif key in ("wellbeing", "health", "employment_percent"):
+                elif key in ("wellbeing", "health", "unemployment_percent"):
                     summary.append(f"{label}: {delta:+.0f} (now {b:.0f})")
                 else:
                     summary.append(f"{label}: {delta:+,} (now {b:,.0f})")

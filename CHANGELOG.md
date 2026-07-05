@@ -2,6 +2,29 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.5] — 2026-07-05
+
+### Metrics & export (schema 2.10.0)
+
+- **Unemployment** — dashboard shows unemployment % (derived from employment rate), not employment.
+- **Traffic congestion** — replaces road/transit ratio; CS2 Data Export now reads slow `Blocker+Vehicle` entities (`m_MaxSpeed < 6`) with optional bottleneck counts.
+- **Economy grade** — surplus cities get projected runway credit; strong treasuries no longer score **D** when monthly margin is healthy.
+- **Hourly badges** — session delta hidden under Population/Treasury when `/h` is shown.
+
+### Insights
+
+- **Transit doctor** — recurring line issues grouped by type with collapsed per-line drill-down; fixed diagnosis overwrite bug.
+
+### GUI
+
+- Sidebar **READY** strip text centered.
+
+### Install
+
+Download **`CitiesAI-Setup-0.5.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases). Close CS2 before installing so the bundled export mod (schema **2.10.0**) can update.
+
+---
+
 ## [0.4] — 2026-07-05
 
 ### Logic & performance
@@ -109,7 +132,6 @@ Download **`CitiesAI-Setup-0.2.0.exe`** from [Releases](https://github.com/Xharv
 ### Known limitations
 
 - `taxes.*_taxable_income` in the export still reads a single parameter per sector; sector tax breakdowns may be understated.
-- Road congestion index is unavailable on current game builds (game API component missing); the Issues tab cannot flag congestion yet.
 
 ---
 

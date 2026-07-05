@@ -327,7 +327,7 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     if employment_low:
         detail_parts: list[str] = []
         if employment is not None:
-            detail_parts.append(f"Employment {employment:.0f}%")
+            detail_parts.append(f"Unemployment {100 - employment:.0f}%")
         if unemployed is not None:
             detail_parts.append(f"{int(unemployed)} unemployed workers")
         issues.append(

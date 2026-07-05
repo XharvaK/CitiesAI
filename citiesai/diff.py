@@ -18,8 +18,8 @@ _DIFF_KEYS = (
     ("health", "Health"),
     ("homeless", "Homeless"),
     ("moving_away", "Moving away"),
-    ("employment_percent", "Employment %"),
-    ("traffic_volume", "Traffic volume"),
+    ("unemployment_percent", "Unemployment %"),
+    ("congestion_percent", "Congestion %"),
     ("transit_lines", "Transit lines"),
     ("crime_rate", "Crime rate"),
 )

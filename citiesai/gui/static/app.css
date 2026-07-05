@@ -154,7 +154,7 @@ a { color: var(--accent-2); }
   border: 1px solid var(--border);
   margin-bottom: 0.5rem;
   font: inherit;
-  text-align: left;
+  text-align: center;
 }
 
 .health-strip.clickable {
@@ -1919,4 +1919,37 @@ select.control.select-control {
 
 .insight-domain-actions .insight-ask {
   width: 100%;
+}
+
+.transit-group-list {
+  margin-top: 0.75rem;
+}
+
+.transit-group-card {
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.transit-group-head {
+  margin-bottom: 0.35rem;
+}
+
+.transit-group-meta {
+  margin: 0.35rem 0 0;
+}
+
+.transit-group-details {
+  margin-top: 0.35rem;
+}
+
+.transit-group-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+.transit-group-lines {
+  min-width: 24rem;
+  margin-top: 0.5rem;
 }

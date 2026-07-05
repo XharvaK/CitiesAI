@@ -29,6 +29,21 @@ def _score_clamp(value: float, *, low: float, high: float) -> float:
     return max(0.0, min(100.0, (value - low) / (high - low) * 100.0))
 
 
+def _economy_runway_months(
+    treasury: float,
+    expense: float,
+    *,
+    net_monthly: float | None,
+    projection_months: int = 3,
+) -> float:
+    """Months of expenses treasury covers; surplus cities get a short forward look."""
+    static = treasury / expense
+    if net_monthly is not None and net_monthly > 0 and projection_months > 0:
+        projected = (treasury + net_monthly * projection_months) / expense
+        return max(static, projected)
+    return static
+
+
 def _delta_grade(current: str, previous: str | None) -> str | None:
     if not previous or previous == current or current == "N/A" or previous == "N/A":
         return None
@@ -60,12 +75,17 @@ def build_report_card(
     income = budget.get("income")
     expense = budget.get("expense")
     treasury = budget.get("treasury")
+    net_monthly = budget.get("net_monthly")
     econ_score = 50.0
     if isinstance(income, (int, float)) and isinstance(expense, (int, float)) and expense > 0:
         margin = (income - expense) / expense
         econ_score = _score_clamp(margin, low=-0.2, high=0.3)
     if isinstance(treasury, (int, float)) and isinstance(expense, (int, float)) and expense > 0:
-        runway = treasury / expense
+        runway = _economy_runway_months(
+            float(treasury),
+            float(expense),
+            net_monthly=float(net_monthly) if isinstance(net_monthly, (int, float)) else None,
+        )
         econ_score = (econ_score + _score_clamp(runway, low=1, high=12)) / 2
     econ_grade = _grade(econ_score)
     domains.append(

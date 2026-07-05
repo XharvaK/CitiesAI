@@ -44,9 +44,10 @@ def render_report_html(
         for i in issues[:8]
     )
     transit_items = "".join(
-        f"<li><strong>{html.escape(line['line_name'])}</strong> ({html.escape(line['severity'])}): "
-        f"{html.escape(line['diagnosis'])}</li>"
-        for line in (transit.get("lines") or [])[:6]
+        f"<li><strong>{html.escape(group['title'])}</strong> "
+        f"({group['line_count']} lines, {html.escape(group['severity'])}): "
+        f"{html.escape(group['diagnosis'])}</li>"
+        for group in (transit.get("problem_groups") or [])[:6]
     )
     housing_items = "".join(
         f"<li><strong>{html.escape(f['title'])}</strong> — {html.escape(f['detail'])}</li>"

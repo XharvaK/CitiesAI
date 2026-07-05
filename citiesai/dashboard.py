@@ -14,6 +14,20 @@ def _num(value: Any) -> float | int | None:
     return None
 
 
+def unemployment_percent(employment_rate: Any) -> float | None:
+    rate = _num(employment_rate)
+    if rate is None:
+        return None
+    return round(100.0 - rate, 2)
+
+
+def congestion_percent(congestion_index: Any) -> float | None:
+    index = _num(congestion_index)
+    if index is None:
+        return None
+    return round(index * 100.0, 1)
+
+
 def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> dict[str, Any]:
     city = pick_group(snapshot, "City")
     population = pick_group(snapshot, "Population")
@@ -77,9 +91,12 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
         ),
         "crime_rate": pick(social, "CrimeRate", "crime_rate"),
         "educated_percent": pick(education, "EducatedPercent", "educated_percent"),
-        "employment_percent": pick(education, "EmploymentRatePercent", "employment_rate_percent"),
-        "congestion": pick(transport, "CongestionIndex0To1", "congestion_index_0_to_1"),
-        "traffic_volume": pick(mobility, "TrafficVolumeIndex", "traffic_volume_index"),
+        "unemployment_percent": unemployment_percent(
+            pick(education, "EmploymentRatePercent", "employment_rate_percent")
+        ),
+        "congestion_percent": congestion_percent(
+            pick(transport, "CongestionIndex0To1", "congestion_index_0_to_1")
+        ),
         "transit_lines": pick(mobility, "LinesTotal", "lines_total"),
         "workforce_potential": pick(workforce, "TotalPotentialWorkers", "total_potential_workers"),
         "workforce_employed": pick(workforce, "EmployedWorkers", "employed_workers"),
