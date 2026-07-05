@@ -8,6 +8,7 @@ from typing import Any
 from ..analyzers import analyze_budget, analyze_housing_labor, analyze_transit_lines
 from ..ask_core import build_ask_bundle, collect_sources_for_queries, meta_to_dict, run_ask
 from ..city_issues import detect_city_issues
+from ..city_name import resolve_city_display_name
 from ..config import config_dir, config_path, load_config, merge_discovered, set_onboarding_complete
 from ..constants import HISTORY_MAX_POINTS
 from ..conversation import get_conversation
@@ -215,7 +216,8 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
     try:
         if agentic:
             conv = get_conversation()
-            conv.set_city_header(brief)
+            city_name = resolve_city_display_name(snapshot, meta)
+            conv.set_city_context(city_name, brief)
             result = None
             for kind, payload in iter_agentic_answer(
                 question,

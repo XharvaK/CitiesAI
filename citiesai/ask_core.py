@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .advice_output import write_advice
+from .city_name import resolve_city_display_name
 from .config import CitiesAIConfig, load_config
 from .conversation import get_conversation
 from .keywords import build_search_queries
@@ -108,7 +109,8 @@ def run_ask(
 
     conv = get_conversation()
     if multi_turn:
-        conv.set_city_header(brief)
+        city_name = resolve_city_display_name(snapshot, meta)
+        conv.set_city_context(city_name, brief)
 
     payload: dict[str, Any] = {
         "ok": True,

@@ -24,6 +24,7 @@ class ConversationStore:
         self._max_turns = max_turns
         self._lock = threading.Lock()
         self._turns: list[ConversationTurn] = []
+        self._city_name: str = ""
         self._city_header: str = ""
         self._load()
 
@@ -34,6 +35,7 @@ class ConversationStore:
             data = json.loads(self._path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return
+        self._city_name = str(data.get("city_name", ""))
         self._city_header = str(data.get("city_header", ""))
         for row in data.get("turns", []):
             if isinstance(row, dict) and row.get("role") and row.get("content"):
@@ -48,6 +50,7 @@ class ConversationStore:
     def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
+            "city_name": self._city_name,
             "city_header": self._city_header,
             "turns": [
                 {"role": t.role, "content": t.content, "sources": t.sources} for t in self._turns
@@ -55,12 +58,17 @@ class ConversationStore:
         }
         self._path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    def set_city_header(self, header: str) -> None:
+    def set_city_context(self, city_name: str, header: str) -> None:
         with self._lock:
-            if header != self._city_header:
-                self._city_header = header
+            if city_name != self._city_name:
+                self._city_name = city_name
                 self._turns.clear()
-                self._save()
+            self._city_header = header
+            self._save()
+
+    def set_city_header(self, header: str) -> None:
+        """Backward-compatible alias; prefer set_city_context with a city name."""
+        self.set_city_context(header, header)
 
     def add_turn(self, role: str, content: str, *, sources: list[dict[str, Any]] | None = None) -> None:
         with self._lock:

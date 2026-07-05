@@ -155,17 +155,26 @@ def _should_alert(
     return True
 
 
+def _sync_watch_city(state: dict[str, Any], city: str) -> None:
+    prev = state.get("active_city")
+    if prev and prev != city:
+        state["alerted"] = {}
+    state["active_city"] = city
+
+
 def evaluate_watch_alerts(snapshot: dict[str, Any], *, state: dict[str, Any] | None = None) -> list[dict[str, str]]:
     state = state if state is not None else _load_state()
     export_path = load_config().resolved_export_path()
     meta = snapshot_meta(snapshot, path=export_path)
     metrics = extract_headline_metrics(snapshot, meta)
+    city = str(metrics.get("city_name") or "unknown")
+    _sync_watch_city(state, city)
     alerts: list[dict[str, str]] = []
 
     for issue in detect_city_issues(snapshot):
         if issue.get("severity") != "warn":
             continue
-        alert_id = f"issue:{issue.get('id')}"
+        alert_id = f"{city}:issue:{issue.get('id')}"
         if _should_alert(state, alert_id):
             alerts.append(
                 {
@@ -178,7 +187,7 @@ def evaluate_watch_alerts(snapshot: dict[str, Any], *, state: dict[str, Any] | N
     history = get_historian().get_history(export_path=export_path, limit=HISTORY_MAX_POINTS)
     forecast = build_forecasts(history)
     for message in forecast.get("alerts", []):
-        alert_id = f"forecast:{hash(message) & 0xFFFF}"
+        alert_id = f"{city}:forecast:{hash(message) & 0xFFFF}"
         if _should_alert(state, alert_id):
             alerts.append({"id": alert_id, "title": "CitiesAI forecast", "message": message})
 
@@ -186,10 +195,10 @@ def evaluate_watch_alerts(snapshot: dict[str, Any], *, state: dict[str, Any] | N
     hourly = metrics.get("treasury_net_per_hour")
     if isinstance(treasury, (int, float)) and isinstance(hourly, (int, float)) and hourly < 0:
         hours = treasury / abs(hourly)
-        if 0 < hours <= 2 and _should_alert(state, "treasury_critical"):
+        if 0 < hours <= 2 and _should_alert(state, f"{city}:treasury_critical"):
             alerts.append(
                 {
-                    "id": "treasury_critical",
+                    "id": f"{city}:treasury_critical",
                     "title": "Treasury critical",
                     "message": f"~{hours:.1f}h until broke at current burn ({hourly:+,.0f}/h).",
                 }

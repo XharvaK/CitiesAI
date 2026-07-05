@@ -191,13 +191,34 @@ def test_conversation_clears_on_city_change(isolated_config_dir: Path) -> None:
     from citiesai.conversation import ConversationStore
 
     store = ConversationStore(path=isolated_config_dir / "conversation.json")
-    store.set_city_header("City A")
+    store.set_city_context("City A", "brief A")
     store.add_turn("user", "hello")
-    store.set_city_header("City B")
+    store.set_city_context("City B", "brief B")
     assert store.messages_for_llm() == [
-        {"role": "user", "content": "[Current city context]\nCity B"},
+        {"role": "user", "content": "[Current city context]\nbrief B"},
         {"role": "assistant", "content": "Understood. I have the current city metrics."},
     ]
+
+
+def test_conversation_keeps_turns_when_same_city_new_brief(isolated_config_dir: Path) -> None:
+    from citiesai.conversation import ConversationStore
+
+    store = ConversationStore(path=isolated_config_dir / "conversation.json")
+    store.set_city_context("Fabius", "brief v1 population 1000")
+    store.add_turn("user", "hello")
+    store.set_city_context("Fabius", "brief v2 population 2000")
+    messages = store.messages_for_llm()
+    assert any(m.get("content") == "hello" for m in messages)
+    assert messages[0]["content"].endswith("brief v2 population 2000")
+
+
+def test_watch_resets_alerts_on_city_change() -> None:
+    from citiesai.watch import _sync_watch_city
+
+    state: dict = {"alerted": {"Fabius:issue:treasury": 1.0}, "active_city": "Fabius"}
+    _sync_watch_city(state, "Rome")
+    assert state["alerted"] == {}
+    assert state["active_city"] == "Rome"
 
 
 def test_mcp_initialize() -> None:

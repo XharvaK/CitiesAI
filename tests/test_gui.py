@@ -22,7 +22,7 @@ VENDOR_SAMPLE = (
 
 
 def test_version() -> None:
-    assert __version__ == "0.4.0"
+    assert __version__ == "0.4"
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     assert data["project"]["version"] == __version__
@@ -30,7 +30,7 @@ def test_version() -> None:
 
 def test_api_version() -> None:
     data = api_version()
-    assert data["version"] == "0.4.0"
+    assert data["version"] == "0.4"
 
 
 def test_collect_status_report_shape() -> None:

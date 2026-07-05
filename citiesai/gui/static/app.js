@@ -58,6 +58,7 @@ let statusRefreshInFlight = false;
 let lastDashboardData = null;
 let metricModalReturnFocus = null;
 let diagnosticsModalReturnFocus = null;
+let lastActiveCity = null;
 
 function $(id) {
   return document.getElementById(id);
@@ -649,7 +650,7 @@ function renderHealthStrip(status) {
     return;
   }
 
-  el.textContent = "All systems ready";
+  el.textContent = "READY";
   el.classList.add("ok");
   el.setAttribute("aria-disabled", "true");
 }
@@ -905,6 +906,27 @@ function renderDashboardAnomalies(anomalies) {
   }
 }
 
+async function clearAskUi() {
+  $("chat-log").innerHTML = "";
+  localStorage.removeItem("citiesai-chat");
+  try {
+    await fetchJson("/api/chat/clear", { method: "POST", body: "{}" });
+  } catch {
+    /* ignore */
+  }
+  updateAskWelcome();
+}
+
+function onActiveCityChange(cityName) {
+  const name = String(cityName || "").trim();
+  if (!name || name === lastActiveCity) return;
+  const prev = lastActiveCity;
+  lastActiveCity = name;
+  if (!prev) return;
+  void clearAskUi();
+  toast(`Now advising: ${name}`, "ok");
+}
+
 function renderDashboard(data) {
   const grid = $("metric-grid");
   if (!data.ok) {
@@ -928,6 +950,7 @@ function renderDashboard(data) {
   const m = data.metrics;
   const meta = data.meta;
   const hist = data.historian || {};
+  onActiveCityChange(m.city_name);
   $("hero-title").textContent = m.city_name || "Your city";
   const date =
     m.game_year != null ? `Year ${m.game_year}, month ${m.game_month ?? "?"}` : "In-game date unknown";
@@ -1745,13 +1768,8 @@ $("question").addEventListener("input", () => {
   autoGrowTextarea($("question"));
 });
 
-$("clear-chat").addEventListener("click", async () => {
-  $("chat-log").innerHTML = "";
-  localStorage.removeItem("citiesai-chat");
-  try {
-    await fetchJson("/api/chat/clear", { method: "POST", body: "{}" });
-  } catch { /* ignore */ }
-  updateAskWelcome();
+$("clear-chat").addEventListener("click", () => {
+  void clearAskUi();
 });
 
 $("export-report")?.addEventListener("click", async () => {
@@ -1958,12 +1976,6 @@ $("open-diagnostics").addEventListener("click", () => {
 $("dashboard-range")?.addEventListener("change", () => void loadDashboard());
 
 async function init() {
-  try {
-    const ver = await fetchJson("/api/version");
-    $("app-version").textContent = `v${ver.version}`;
-  } catch {
-    /* ignore */
-  }
   loadChatHistory();
   updateAskHelper();
   setFeedbackCategory($("feedback-category").value);
