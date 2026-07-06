@@ -2,6 +2,20 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.7.1] — 2026-07-06
+
+### Fixes
+
+- **System tray** — removed **Compact HUD** from the tray right-click menu (HUD remains available from Settings).
+- **Dashboard** — infer water/sewage fulfillment % from capacity vs consumption when the export omits `fulfillment_percent`.
+- **CS2 Data Export (vendor)** — restore typed RCI demand probe (fixes `demand_factors_semantics: unavailable`); harden official city statistics against null game date / sample count; fix `EntityQuery` double-dispose; infer utility fulfillment when fulfilled consumption is missing.
+
+### Install
+
+Download **`CitiesAI-Setup-0.7.1.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+
+---
+
 ## [0.7.0] — 2026-07-06
 
 ### Correctness — revive dead wiring
@@ -36,7 +50,7 @@ All notable changes to CitiesAI are documented here.
 - **Grade badges** — A–F pill badges on dashboard strip and Insights report card.
 - **Dashboard** — unified City Briefing card (digest, priorities, resolved, forecasts, grade deltas); metrics section header; 12-card 3×4 grid.
 - **Compact HUD v2** — frameless always-on-top strip from Settings; treasury + population ±/hr, grade badge, top priority alert.
-- **System tray** — tray icon on launch; closing the window (X) minimizes to tray; right-click **Open**, **Compact HUD**, or **Exit** (full quit).
+- **System tray** — tray icon on launch; closing the window (X) minimizes to tray; right-click **Open** or **Exit** (full quit).
 - **Insights** — removed redundant Budget & treasury card (treasury/net already on Dashboard; economy grade on report card).
 - **Single instance** — second launch focuses the existing window instead of opening another tray icon.
 - **Updater** — when you're on a newer build than GitHub's latest tag, status no longer claims an older release is "latest".

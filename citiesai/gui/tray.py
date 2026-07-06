@@ -26,17 +26,15 @@ def _load_tray_icon() -> Image.Image:
 
 
 class SystemTray:
-    """Background tray icon with Open / Compact HUD / Exit menu."""
+    """Background tray icon with Open / Exit menu."""
 
     def __init__(
         self,
         *,
         on_open: Callable[[], None],
-        on_open_hud: Callable[[], None],
         on_exit: Callable[[], None],
     ) -> None:
         self._on_open = on_open
-        self._on_open_hud = on_open_hud
         self._on_exit = on_exit
         self._icon: PystrayIcon | None = None
         self._thread: threading.Thread | None = None
@@ -46,7 +44,6 @@ class SystemTray:
             return
         menu = Menu(
             MenuItem("Open CitiesAI", self._handle_open, default=True),
-            MenuItem("Compact HUD", self._handle_open_hud),
             Menu.SEPARATOR,
             MenuItem("Exit", self._handle_exit),
         )
@@ -66,9 +63,6 @@ class SystemTray:
 
     def _handle_open(self, _icon: PystrayIcon, _item: MenuItem) -> None:
         self._on_open()
-
-    def _handle_open_hud(self, _icon: PystrayIcon, _item: MenuItem) -> None:
-        self._on_open_hud()
 
     def _handle_exit(self, _icon: PystrayIcon, _item: MenuItem) -> None:
         self._on_exit()

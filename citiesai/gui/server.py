@@ -488,7 +488,6 @@ def _run_native_window(server: CitiesAIHTTPServer, url: str, *, hud: bool = Fals
 
     tray = SystemTray(
         on_open=bridge.show_main,
-        on_open_hud=bridge.open_hud,
         on_exit=bridge.quit_app,
     )
     bridge.attach_tray(tray)

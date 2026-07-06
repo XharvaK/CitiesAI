@@ -55,6 +55,20 @@ def congestion_percent(congestion_index: Any) -> float | None:
     return round(index * 100.0, 1)
 
 
+def utility_fulfillment_percent(flow: dict[str, Any]) -> float | int | None:
+    """Prefer exported fulfillment; infer from capacity vs consumption when missing."""
+    direct = _num(pick(flow, "FulfillmentPercent", "fulfillment_percent"))
+    if direct is not None:
+        return direct
+
+    consumption = _num(pick(flow, "Consumption", "consumption"))
+    capacity = _num(pick(flow, "Capacity", "capacity"))
+    if consumption is None or consumption <= 0 or capacity is None:
+        return None
+
+    return round(min(capacity, consumption) / consumption * 100.0, 1)
+
+
 def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> dict[str, Any]:
     city = pick_group(snapshot, "City")
     population = pick_group(snapshot, "Population")
@@ -139,15 +153,11 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
             "FulfillmentPercent",
             "fulfillment_percent",
         ),
-        "water_fulfillment_percent": pick(
-            pick_group(utility_pressure, "Water"),
-            "FulfillmentPercent",
-            "fulfillment_percent",
+        "water_fulfillment_percent": utility_fulfillment_percent(
+            pick_group(utility_pressure, "Water")
         ),
-        "sewage_fulfillment_percent": pick(
-            pick_group(utility_pressure, "Sewage"),
-            "FulfillmentPercent",
-            "fulfillment_percent",
+        "sewage_fulfillment_percent": utility_fulfillment_percent(
+            pick_group(utility_pressure, "Sewage")
         ),
         "power_headline": (
             f"{pick(utilities, 'ElectricityFulfillmentPercent', 'electricity_fulfillment_percent'):.0f}% power fulfilled"

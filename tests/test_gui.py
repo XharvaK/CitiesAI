@@ -77,6 +77,22 @@ def test_extract_headline_metrics_utility_fulfillment() -> None:
     assert metrics["crime_rate"] == 3
 
 
+def test_extract_headline_metrics_infers_utility_fulfillment() -> None:
+    snapshot = {
+        "city": {"building_count": 1},
+        "population": {"total_population": 1000},
+        "utility_pressure_semantics": {
+            "status": "ok",
+            "water": {"capacity": 211000, "consumption": 30706},
+            "sewage": {"capacity": 100000, "consumption": 30706},
+        },
+    }
+    meta = snapshot_meta(snapshot, path=Path("test.json"))
+    metrics = extract_headline_metrics(snapshot, meta)
+    assert metrics["water_fulfillment_percent"] == pytest.approx(100.0)
+    assert metrics["sewage_fulfillment_percent"] == pytest.approx(100.0)
+
+
 def test_extract_headline_metrics_pascal_case(vendor_sample: dict) -> None:
     snapshot = json.loads(json.dumps(vendor_sample))
     snapshot["Education"] = snapshot.pop("education")
