@@ -2,6 +2,18 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.7.2] — 2026-07-06
+
+### Fixes
+
+- **Insights** — report card, analyzers, and overall score trend now refresh every poll while the Insights tab is active (same ~5s cadence as Dashboard).
+
+### Install
+
+Download **`CitiesAI-Setup-0.7.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+
+---
+
 ## [0.7.1] — 2026-07-06
 
 ### Fixes

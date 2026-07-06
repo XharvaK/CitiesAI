@@ -1434,6 +1434,9 @@ async function loadDashboard() {
       await refreshIssues();
       await renderSuggestions();
     }
+    if ($("view-insights").classList.contains("active")) {
+      void loadInsights({ silent: true });
+    }
   } catch (err) {
     renderDashboard({
       ok: false,
@@ -1810,9 +1813,12 @@ function renderTransitGroup(group) {
   </li>`;
 }
 
-async function loadInsights() {
+async function loadInsights(options = {}) {
+  const silent = Boolean(options.silent);
   const root = $("insights-content");
-  root.innerHTML = `<div class="skeleton"></div>`.repeat(3);
+  if (!silent) {
+    root.innerHTML = `<div class="skeleton"></div>`.repeat(3);
+  }
   try {
     const data = await fetchJson("/api/insights");
     if (!data.ok) {
