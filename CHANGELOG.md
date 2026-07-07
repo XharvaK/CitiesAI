@@ -2,6 +2,29 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.7.4] — 2026-07-07
+
+### Performance
+
+- **CS2 Data Export (vendor)** — major in-game FPS improvements for large cities without removing any metric groups:
+  - Transit access-gap observer no longer scans every `PathOwner` entity every frame; citizens-only query, 6-frame throttle (configurable), cached entity queries, and stop-list refresh only when stop count changes.
+  - Export cycle memoization deduplicates population/workforce scans (7× → 1×), workplace scans (5× → 1×), household economy/pressure passes (2× → 1×), and `GetSortedLines` (2× → 1×) per 5s snapshot.
+  - Snapshot retention runs every 10th export instead of every export; optional `CS2DATAEXPORT_PROFILE=1` logs per-phase timings to `CS2DataExport.log`.
+- **Estimated impact** on ~90k population cities (based on redundant work removed): **~75–85% less mod CPU during normal play** (sustained observer cost down ~90%+; export spikes down ~50–60%). Users who previously saw ~50 FPS → ~10 FPS with the mod should recover most of that gap; exact FPS depends on city/mod load.
+- **Workaround env vars** (documented in TROUBLESHOOTING): `CS2DATAEXPORT_TRANSIT_CAPTURE=off`, `CS2DATAEXPORT_TRANSIT_OBSERVE_EVERY_N_FRAMES`, `CS2DATAEXPORT_TRANSIT_CAPTURE_COOLDOWN_MINUTES`.
+
+### Fixes
+
+- **Dashboard** — when CS2 Data Export official city statistics fail, fill treasury/income/health/wellbeing/crime from recent historian snapshots instead of showing `n/a`.
+- **CS2 Data Export (vendor)** — harden official city statistics probe against runtime `NullReferenceException` (recover finance/social metrics when assembly fails).
+- **Doctor** — warn when official city statistics export is degraded.
+
+### Install
+
+Download **`CitiesAI-Setup-0.7.4.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases). Close CS2 before installing so the bundled export mod can update.
+
+---
+
 ## [0.7.3] — 2026-07-07
 
 ### Fixes

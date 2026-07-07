@@ -11,6 +11,17 @@
 
 `Modding.log` may show `Enabled Mods: (none)` for local code mods. Look for `Loaded CS2DataExport` instead.
 
+## Performance / FPS drop with export mod
+
+If enabling CS2 Data Export lowers FPS sharply on a large city:
+
+1. **Update to 0.7.4+** — transit observer and export scans were optimized (see CHANGELOG).
+2. **Quick A/B test** — set `CS2DATAEXPORT_TRANSIT_CAPTURE=off` before launching CS2 (system env or Steam launch options). If FPS recovers, the transit access-gap observer was the bottleneck; other metrics still export.
+3. **Tune observer** (optional):
+   - `CS2DATAEXPORT_TRANSIT_OBSERVE_EVERY_N_FRAMES=8` (default 6)
+   - `CS2DATAEXPORT_TRANSIT_CAPTURE_COOLDOWN_MINUTES=15` (default 0 = continuous rolling capture)
+4. **Profile** — `CS2DATAEXPORT_PROFILE=1` writes per-phase ms to `CS2DataExport.log`.
+
 ## Game Encyclopedia unavailable
 
 `citiesai doctor` reports encyclopedia missing when `Locale.cok` cannot be found.

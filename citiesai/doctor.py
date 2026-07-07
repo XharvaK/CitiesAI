@@ -4,7 +4,7 @@ from .config import CitiesAIConfig, config_path, load_config
 from .constants import STALE_AFTER_SECONDS
 from .dashboard import extract_headline_metrics
 from .issues import blocking_issue_count, collect_issues
-from .mod_install import mod_installed
+from .official_fallbacks import official_stats_degraded
 from .snapshot import SnapshotMeta, load_snapshot_safe, snapshot_meta
 from .status import collect_status_report
 from .summary import congestion_export_notice
@@ -59,6 +59,12 @@ def run_doctor(cfg: CitiesAIConfig | None = None) -> int:
             congestion_notice = congestion_export_notice(snapshot, meta)
             if congestion_notice:
                 print(f"  warning: {congestion_notice}")
+            if official_stats_degraded(snapshot):
+                print(
+                    "  warning: official city statistics export failed — "
+                    "treasury/income/health may be n/a until the Data Export mod recovers. "
+                    "Close CS2 and reinstall the mod from CitiesAI Settings if it persists."
+                )
     else:
         print("  (no export file)")
 

@@ -127,9 +127,17 @@ def build_report_card(
     *,
     previous_domain_scores: dict[str, dict[str, Any]] | None = None,
     treasury_series: list[Any] | None = None,
+    headline_metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    metrics = extract_headline_metrics(snapshot, meta)
+    metrics = headline_metrics or extract_headline_metrics(snapshot, meta)
     budget = analyze_budget(snapshot)
+    for key in ("treasury", "income", "expense"):
+        if budget.get(key) is None and metrics.get(key) is not None:
+            budget[key] = metrics[key]
+    income = budget.get("income")
+    expense = budget.get("expense")
+    if income is not None and expense is not None:
+        budget["net_monthly"] = income - expense
     housing = analyze_housing_labor(snapshot)
     transit = analyze_transit_lines(snapshot)
 
@@ -292,6 +300,8 @@ def build_report_card(
     wellbeing = metrics.get("wellbeing")
     health = metrics.get("health")
     crime = pick(social, "CrimeRate", "crime_rate")
+    if crime is None:
+        crime = metrics.get("crime_rate")
     wellbeing_score = 0.0
     parts = 0
     if isinstance(wellbeing, (int, float)):

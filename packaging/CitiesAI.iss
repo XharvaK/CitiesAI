@@ -2,7 +2,7 @@
 ; Requires Inno Setup 6: https://jrsoftware.org/isinfo.php
 
 #define MyAppName "CitiesAI"
-#define MyAppVersion "0.7.3"
+#define MyAppVersion "0.7.4"
 #define MyAppPublisher "XharvaK"
 #define MyAppURL "https://github.com/XharvaK/CitiesAI"
 #define MyAppExeName "CitiesAI.exe"

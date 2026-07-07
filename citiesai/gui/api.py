@@ -45,6 +45,7 @@ from ..llm import (
     test_api_key,
 )
 from ..mod_install import install_mod, mod_installed
+from ..official_fallbacks import fill_official_metric_gaps
 from ..report_html import write_report_file
 from ..report_ops import build_and_persist_report_card
 from ..setup_wizard import apply_llm_provider, save_detected_config
@@ -302,7 +303,17 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         historian=historian,
     )
     issues = historian.enrich_issues_with_lifecycle(issues, city_name=city_name)
-    report_card = build_and_persist_report_card(snapshot, meta, historian=historian)
+    metrics = fill_official_metric_gaps(
+        extract_headline_metrics(snapshot, meta),
+        hist,
+        snapshot=snapshot,
+    )
+    report_card = build_and_persist_report_card(
+        snapshot,
+        meta,
+        historian=historian,
+        headline_metrics=metrics,
+    )
     forecasts = build_forecasts(hist)
     digest = historian.session_digest(history=hist)
     briefing = build_mayors_briefing(
@@ -328,7 +339,7 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
     return {
         "ok": True,
         "meta": meta_to_dict(meta),
-        "metrics": extract_headline_metrics(snapshot, meta),
+        "metrics": metrics,
         "historian": hist,
         "brief": build_city_brief(snapshot, meta),
         "report_card": report_card,

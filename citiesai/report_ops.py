@@ -16,6 +16,7 @@ def build_and_persist_report_card(
     meta: SnapshotMeta,
     *,
     historian: CityHistorian | None = None,
+    headline_metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     hist = historian or get_historian()
     export_path = meta.path
@@ -29,6 +30,7 @@ def build_and_persist_report_card(
         meta,
         previous_domain_scores=prev_scores,
         treasury_series=treasury_series,
+        headline_metrics=headline_metrics,
     )
     exported_at = meta.exported_at_utc
     if exported_at and card.get("domain_scores"):
