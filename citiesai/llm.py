@@ -122,6 +122,13 @@ def build_system_prompt(*, agentic: bool = False, force_answer: bool = False) ->
     return base
 
 
+def _supports_temperature(settings: LLMSettings) -> bool:
+    if "api.openai.com" not in settings.base_url:
+        return True
+    model = settings.model.lower()
+    return not any(model.startswith(prefix) for prefix in ("gpt-5", "o1", "o3", "o4"))
+
+
 def _chat_payload(
     messages: list[dict[str, Any]],
     settings: LLMSettings,
@@ -132,8 +139,9 @@ def _chat_payload(
     payload: dict[str, object] = {
         "model": settings.model,
         "messages": messages,
-        "temperature": 0.3,
     }
+    if _supports_temperature(settings):
+        payload["temperature"] = 0.3
     if stream:
         payload["stream"] = True
     if tools:

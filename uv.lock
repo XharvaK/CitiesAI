@@ -57,7 +57,7 @@ wheels = [
 
 [[package]]
 name = "citiesai"
-version = "0.7.2"
+version = "0.7.3"
 source = { editable = "." }
 dependencies = [
     { name = "cities2-mcp" },

@@ -47,7 +47,7 @@ from ..llm import (
 from ..mod_install import install_mod, mod_installed
 from ..report_html import write_report_file
 from ..report_ops import build_and_persist_report_card
-from ..setup_wizard import save_detected_config
+from ..setup_wizard import apply_llm_provider, save_detected_config
 from ..snapshot import load_snapshot_safe, snapshot_meta
 from ..status import collect_status_report
 from ..suggestions import build_ask_suggestions
@@ -527,7 +527,11 @@ def api_onboarding_complete(_body: dict[str, Any] | None = None) -> dict[str, An
 
 def api_save_key(body: dict[str, Any]) -> dict[str, Any]:
     key = str(body.get("api_key", "")).strip()
-    env_name = str(body.get("env_name", "MISTRAL_API_KEY")).strip() or "MISTRAL_API_KEY"
+    env_name = str(body.get("env_name", "")).strip()
+    if not env_name:
+        provider = str(body.get("llm_provider", "")).strip()
+        preset = LLM_PRESETS.get(provider)
+        env_name = preset["api_key_env"] if preset else "MISTRAL_API_KEY"
     if not key:
         clear_env_var(env_name)
         return {"ok": True, "cleared": True}
@@ -535,8 +539,16 @@ def api_save_key(body: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "env_file": str(path), "env_name": env_name}
 
 
-def api_test_key() -> dict[str, Any]:
-    result = test_api_key(cfg=load_config())
+def api_test_key(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = body or {}
+    cfg = load_config()
+    provider = body.get("llm_provider")
+    model = body.get("llm_model")
+    if provider:
+        apply_llm_provider(cfg, str(provider))
+    if model:
+        cfg.llm_model = str(model)
+    result = test_api_key(cfg=cfg)
     return {"ok": result.get("ok", False), **result}
 
 

@@ -58,6 +58,7 @@ let lastStatus = null;
 let lastIssues = [];
 let llmConfigured = false;
 let lastApiKeyEnv = "MISTRAL_API_KEY";
+let llmPresets = {};
 let apiKeyReplacing = false;
 let lastKeyUiState = { configured: false, suffix: null, provider: "mistral" };
 let refreshInFlight = false;
@@ -1913,6 +1914,27 @@ async function initWatchToggle() {
   } catch { /* ignore */ }
 }
 
+function currentLlmForm() {
+  const provider = $("setup-provider")?.value || "mistral";
+  const model = ($("setup-model")?.value || "").trim();
+  const preset = llmPresets[provider] || {};
+  const envName = preset.api_key_env || lastApiKeyEnv;
+  return { provider, model, envName };
+}
+
+async function persistLlmForm() {
+  const { provider, model, envName } = currentLlmForm();
+  await fetchJson("/api/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      llm_provider: provider,
+      llm_model: model || undefined,
+    }),
+  });
+  lastApiKeyEnv = envName;
+}
+
 function updateKeyHint(provider) {
   const hint = $("key-hint");
   if (!hint) return;
@@ -2195,13 +2217,17 @@ async function loadSettings() {
     }
     try {
       const presets = await fetchJson("/api/settings/llm-presets");
+      llmPresets = presets.presets || {};
       const providerSelect = $("setup-provider");
-      if (providerSelect && presets.presets) {
+      if (providerSelect && llmPresets) {
         providerSelect.value = data.llm_provider || "mistral";
         updateKeyHint(providerSelect.value);
         providerSelect.onchange = () => {
-          const preset = presets.presets[providerSelect.value];
-          if (preset) $("setup-model").value = preset.model;
+          const preset = llmPresets[providerSelect.value];
+          if (preset) {
+            $("setup-model").value = preset.model;
+            lastApiKeyEnv = preset.api_key_env;
+          }
           lastKeyUiState.provider = providerSelect.value;
           updateKeyHint(providerSelect.value);
           renderApiKeyState({ ...lastKeyUiState, replacing: apiKeyReplacing });
@@ -2531,12 +2557,14 @@ $("remove-key").addEventListener("click", async () => {
 
 $("save-key").addEventListener("click", async () => {
   try {
+    await persistLlmForm();
+    const { envName } = currentLlmForm();
     await fetchJson("/api/settings/key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: $("api-key").value.trim(),
-        env_name: lastApiKeyEnv,
+        env_name: envName,
       }),
     });
     toast("API key saved locally", "ok");
@@ -2552,21 +2580,28 @@ $("save-key").addEventListener("click", async () => {
 });
 
 $("test-key").addEventListener("click", async () => {
-  const key = $("api-key").value.trim();
-  if (key) {
-    await fetchJson("/api/settings/key", {
+  try {
+    await persistLlmForm();
+    const { envName } = currentLlmForm();
+    const key = $("api-key").value.trim();
+    if (key) {
+      await fetchJson("/api/settings/key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: key, env_name: envName }),
+      });
+    }
+    const data = await fetchJson("/api/settings/key/test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: key, env_name: lastApiKeyEnv }),
+      body: "{}",
     });
-  }
-  try {
-    const data = await fetchJson("/api/settings/key/test");
     if (!data.ok) throw new Error(data.error);
     toast(`Key OK (${data.model})`, "ok");
     renderApiKeyState({ ...lastKeyUiState, verified: true, replacing: apiKeyReplacing });
     llmConfigured = true;
     updateAskHelper();
+    await loadSettings();
   } catch (err) {
     toast(String(err.message || err), "err");
   }

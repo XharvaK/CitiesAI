@@ -2,6 +2,19 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.7.3] — 2026-07-07
+
+### Fixes
+
+- **Settings** — OpenAI provider selection and key test now use the selected provider (no longer defaulting to Mistral).
+- **OpenAI** — omit `temperature` for models that reject it (e.g. `gpt-5.5`).
+
+### Install
+
+Download **`CitiesAI-Setup-0.7.3.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+
+---
+
 ## [0.7.2] — 2026-07-06
 
 ### Fixes

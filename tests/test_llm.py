@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from citiesai.llm import build_system_prompt
+from citiesai.llm import (
+    LLMSettings,
+    _chat_payload,
+    _supports_temperature,
+    build_system_prompt,
+)
 
 
 def test_build_system_prompt_practical_no_sources() -> None:
@@ -11,3 +16,37 @@ def test_build_system_prompt_practical_no_sources() -> None:
     assert "End with a short Sources line" not in prompt
     assert "staleness" in prompt
     assert "stale or partial" not in prompt
+
+
+def test_chat_payload_omits_temperature_for_gpt5() -> None:
+    settings = LLMSettings(
+        base_url="https://api.openai.com/v1",
+        model="gpt-5.5",
+        api_key="sk-test",
+        api_key_env="OPENAI_API_KEY",
+    )
+    payload = _chat_payload([{"role": "user", "content": "hi"}], settings, stream=False)
+    assert "temperature" not in payload
+
+
+def test_chat_payload_includes_temperature_for_mistral() -> None:
+    settings = LLMSettings(
+        base_url="https://api.mistral.ai/v1",
+        model="mistral-medium-latest",
+        api_key="sk-test",
+        api_key_env="MISTRAL_API_KEY",
+    )
+    payload = _chat_payload([{"role": "user", "content": "hi"}], settings, stream=False)
+    assert payload["temperature"] == 0.3
+
+
+def test_chat_payload_includes_temperature_for_gpt4o() -> None:
+    settings = LLMSettings(
+        base_url="https://api.openai.com/v1",
+        model="gpt-4o",
+        api_key="sk-test",
+        api_key_env="OPENAI_API_KEY",
+    )
+    assert _supports_temperature(settings) is True
+    payload = _chat_payload([{"role": "user", "content": "hi"}], settings, stream=False)
+    assert payload["temperature"] == 0.3
