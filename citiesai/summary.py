@@ -58,8 +58,9 @@ def congestion_export_notice(snapshot: dict[str, Any], meta: SnapshotMeta) -> st
     schema = meta.schema_version or ""
     if schema and _parse_schema_version(schema) < _parse_schema_version("2.10.0"):
         return (
-            "Traffic congestion is unavailable: update the CS2 Data Export mod "
-            "(export schema 2.10.0+)."
+            "Traffic congestion is unavailable: export schema 2.10.0+ required — "
+            "install a newer CitiesAI release (Settings → Updates) to refresh the "
+            "bundled export mod."
         )
     return "Traffic congestion is unavailable in this export."
 

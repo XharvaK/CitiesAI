@@ -8,7 +8,7 @@ import pytest
 
 from citiesai.keywords import build_search_queries, snapshot_signals
 from citiesai.snapshot import load_snapshot, pick, pick_group, snapshot_meta
-from citiesai.summary import build_city_brief
+from citiesai.summary import build_city_brief, congestion_export_notice
 
 VENDOR_SAMPLE = (
     Path(__file__).resolve().parents[1]
@@ -94,6 +94,14 @@ def test_brief_renders_pascal_case(empty_city: dict) -> None:
     brief = build_city_brief(empty_city, meta)
     assert "26" in brief
     assert "in-game city currency" in brief
+
+
+def test_congestion_export_notice_points_to_citiesai_update(empty_city: dict) -> None:
+    meta = snapshot_meta(empty_city, path=Path("latest.json"))
+    notice = congestion_export_notice(empty_city, meta)
+    assert notice is not None
+    assert "Settings → Updates" in notice
+    assert "update the CS2 Data Export mod" not in notice.lower()
 
 
 def test_vendor_sample_is_valid_json() -> None:

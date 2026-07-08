@@ -6,6 +6,7 @@ from citiesai.llm import (
     _supports_temperature,
     build_system_prompt,
 )
+from citiesai.version import __version__
 
 
 def test_build_system_prompt_practical_no_sources() -> None:
@@ -17,6 +18,28 @@ def test_build_system_prompt_practical_no_sources() -> None:
     assert "staleness" in prompt
     assert "stale or partial" not in prompt
 
+
+def test_build_system_prompt_hardened() -> None:
+    prompt = build_system_prompt()
+    assert f"CitiesAI v{__version__}" in prompt
+    assert "Settings → Updates" in prompt
+    assert "github.com/XharvaK/CitiesAI/releases" in prompt
+    assert "Paradox Mods unless they explicitly" in prompt
+    assert "close CS2" in prompt
+    assert "install/reinstall export mod" in prompt
+    assert "skip the numbered action list" in prompt
+    assert "Never invent metrics" in prompt
+    assert "patch versions" in prompt
+    assert "Game Encyclopedia" in prompt
+    assert "in-game city currency" in prompt
+    assert "0-100 indices" in prompt
+    assert "commuters/tourists" in prompt
+    assert "Cities: Skylines II only" in prompt
+    assert "No cheats, save editing" in prompt
+
+    agentic = build_system_prompt(agentic=True)
+    assert f"CitiesAI v{__version__}" in agentic
+    assert "fetch metric groups" in agentic
 
 def test_chat_payload_omits_temperature_for_gpt5() -> None:
     settings = LLMSettings(
