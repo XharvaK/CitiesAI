@@ -69,8 +69,27 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 CS2_WATCH_INTERVAL_S = 4.0
 CS2_GONE_POLLS_REQUIRED = 2
+COMAYOR_LIVE_POLL_S = 2.0
 
 WindowMode = Literal["native", "browser", "none"]
+
+
+def export_is_live() -> bool:
+    """True when a readable city snapshot exists and is within the app stale window (15s)."""
+    cfg = load_config()
+    export_path = cfg.resolved_export_path()
+    if export_path is None or not export_path.is_file():
+        return False
+    snapshot, _err = load_snapshot_safe(export_path)
+    if snapshot is None:
+        return False
+    meta = snapshot_meta(snapshot, path=export_path)
+    return not bool(meta.stale)
+
+
+def comayor_should_be_open(*, force_hud: bool, enabled: bool, live: bool) -> bool:
+    """Open Co-Mayor only when preferred/forced and the city export is live."""
+    return bool(live and (force_hud or enabled))
 
 
 def _static_root():
@@ -116,16 +135,19 @@ def _hud_html() -> bytes:
 class GuiBridge:
     """Pywebview js_api: Co-Mayor process spawn and tray actions."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, *, force_hud: bool = False) -> None:
         self._base_url = base_url.rstrip("/")
         self._main_window: webview.Window | None = None
         self._tray: SystemTray | None = None
         self._exiting = False
         self._hud = HudProcessController()
+        self._force_hud = force_hud
         self._cs2_seen = False
         self._cs2_gone_polls = 0
         self._cs2_watch_stop = threading.Event()
         self._cs2_watch_thread: threading.Thread | None = None
+        self._comayor_live_stop = threading.Event()
+        self._comayor_live_thread: threading.Thread | None = None
 
     def attach_main_window(self, window: webview.Window) -> None:
         self._main_window = window
@@ -146,6 +168,45 @@ class GuiBridge:
 
     def stop_cs2_watch(self) -> None:
         self._cs2_watch_stop.set()
+
+    def start_comayor_live_watch(self) -> None:
+        if self._comayor_live_thread is not None and self._comayor_live_thread.is_alive():
+            return
+        self._comayor_live_stop.clear()
+        self._comayor_live_thread = threading.Thread(
+            target=self._comayor_live_loop,
+            name="citiesai-comayor-live",
+            daemon=True,
+        )
+        self._comayor_live_thread.start()
+
+    def stop_comayor_live_watch(self) -> None:
+        self._comayor_live_stop.set()
+
+    def sync_comayor_to_live_export(self) -> dict[str, Any]:
+        """Open or close Co-Mayor based on preference + live export."""
+        if self._exiting:
+            return {"ok": True, "action": "exiting"}
+        desired = comayor_should_be_open(
+            force_hud=self._force_hud,
+            enabled=bool(load_config().comayor_enabled),
+            live=export_is_live(),
+        )
+        running = self._hud.is_running()
+        if desired and not running:
+            return self.open_hud()
+        if not desired and running:
+            return self.close_hud()
+        return {"ok": True, "action": "open" if running else "closed"}
+
+    def _comayor_live_loop(self) -> None:
+        while not self._comayor_live_stop.wait(COMAYOR_LIVE_POLL_S):
+            if self._exiting:
+                return
+            try:
+                self.sync_comayor_to_live_export()
+            except Exception:
+                pass
 
     def _cs2_watch_loop(self) -> None:
         while not self._cs2_watch_stop.wait(CS2_WATCH_INTERVAL_S):
@@ -193,6 +254,7 @@ class GuiBridge:
         if self._exiting:
             return
         self._exiting = True
+        self.stop_comayor_live_watch()
         self.stop_cs2_watch()
         # Close HUD before tray teardown so orphans are not left behind.
         self._hud.close()
@@ -212,6 +274,10 @@ class GuiBridge:
         token = get_session_token() or ""
         if not token:
             return {"ok": False, "error": "Session token missing"}
+        # Settings / CLI can request open; still require live export so Co-Mayor
+        # does not sit in OFF/STALE with no city loaded.
+        if not export_is_live():
+            return {"ok": True, "action": "waiting_for_live_export"}
         return self._hud.open(self._base_url, token)
 
     def set_comayor_enabled(self, enabled: bool) -> dict[str, Any]:
@@ -477,7 +543,7 @@ def _run_native_window(server: CitiesAIHTTPServer, url: str, *, hud: bool = Fals
         _shutdown_server(server)
         return 1
 
-    bridge = GuiBridge(url)
+    bridge = GuiBridge(url, force_hud=hud)
     main_window = webview.create_window(
         title=f"CitiesAI v{__version__}",
         url=url,
@@ -505,16 +571,11 @@ def _run_native_window(server: CitiesAIHTTPServer, url: str, *, hud: bool = Fals
     bridge.attach_tray(tray)
     tray.start()
     bridge.start_cs2_watch()
-
-    should_open_hud = hud or load_config().comayor_enabled
-    if should_open_hud:
-        result = bridge.open_hud()
-        if not result.get("ok"):
-            # One retry after a short delay (Qt/plugin race on cold start).
-            time.sleep(1.0)
-            if not bridge._exiting:
-                bridge.open_hud()
+    bridge.start_comayor_live_watch()
+    # Immediate sync so a live city opens Co-Mayor without waiting for the first poll.
+    bridge.sync_comayor_to_live_export()
     webview.start()
+    bridge.stop_comayor_live_watch()
     bridge.stop_cs2_watch()
     bridge._hud.close()
     tray.stop()

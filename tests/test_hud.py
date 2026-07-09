@@ -154,6 +154,16 @@ def test_updates_settings_check_now_above_release_notes() -> None:
     assert "_drag_offset" not in text
 
 
+def test_comayor_should_be_open_requires_live_export() -> None:
+    from citiesai.gui.server import comayor_should_be_open
+
+    assert comayor_should_be_open(force_hud=False, enabled=True, live=True) is True
+    assert comayor_should_be_open(force_hud=True, enabled=False, live=True) is True
+    assert comayor_should_be_open(force_hud=False, enabled=True, live=False) is False
+    assert comayor_should_be_open(force_hud=True, enabled=True, live=False) is False
+    assert comayor_should_be_open(force_hud=False, enabled=False, live=True) is False
+
+
 def test_comayor_enabled_config_roundtrip(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     from citiesai import config as config_mod
 

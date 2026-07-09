@@ -147,6 +147,35 @@ def test_city_sewage_from_zero_capacity() -> None:
     assert "capacity" in sewage["detail"].lower() or "Sewage" in sewage["title"]
 
 
+def test_city_outside_water_sewage_not_issues() -> None:
+    snap = _base_snapshot(
+        UtilityPressureSemantics={
+            "status": "ok",
+            "water_pressure": "import_dependent",
+            "sewage_pressure": "ok",
+            "water": {
+                "fulfillment_percent": 100.0,
+                "consumption": 650093,
+                "capacity": 0,
+                "unfulfilled_consumption": 0,
+                "import_per_month": 650093,
+            },
+            "sewage": {
+                "fulfillment_percent": 100.0,
+                "consumption": 650093,
+                "capacity": 0,
+                "unfulfilled_consumption": 0,
+                "export_per_month": 650093,
+            },
+        },
+        ExternalConnections={"service_trade": {"water": 650093, "sewage": 650093}},
+    )
+    issues = detect_city_issues(snap)
+    ids = {i["id"] for i in issues}
+    assert "city_water_pressure" not in ids
+    assert "city_sewage_pressure" not in ids
+
+
 def test_collect_issues_includes_city_kind() -> None:
     from citiesai.issues import collect_issues
 

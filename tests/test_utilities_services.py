@@ -178,3 +178,46 @@ def test_analyze_utilities_services_hides_city_services_without_staffing_data() 
     report = analyze_utilities_services(snapshot)
     service_ids = {row["id"] for row in report["services"]}
     assert "city_services" not in service_ids
+
+
+def test_analyze_utilities_outside_connections_not_pressure() -> None:
+    """Importing water / exporting sewage at 100% fulfillment is healthy, not a crisis."""
+    snapshot = {
+        "utilities_services_semantics": {
+            "status": "ok",
+            "electricity_fulfillment_percent": 100.0,
+            "electricity_pressure": "ok",
+            "garbage_accumulation": 100,
+        },
+        "utility_pressure_semantics": {
+            "status": "ok",
+            "water_pressure": "import_dependent",
+            "sewage_pressure": "ok",
+            "water": {
+                "fulfillment_percent": 100.0,
+                "consumption": 650093,
+                "capacity": 0,
+                "unfulfilled_consumption": 0,
+                "import_per_month": 650093,
+            },
+            "sewage": {
+                "fulfillment_percent": 100.0,
+                "consumption": 650093,
+                "capacity": 0,
+                "unfulfilled_consumption": 0,
+                "export_per_month": 650093,
+            },
+            "city_service_fill_percent": 90.0,
+        },
+        "external_connections": {
+            "service_trade": {"water": 650093, "sewage": 650093},
+        },
+    }
+    report = analyze_utilities_services(snapshot)
+    finding_ids = {f["id"] for f in report["findings"]}
+    assert "water_pressure" not in finding_ids
+    assert "sewage_pressure" not in finding_ids
+    water_row = next(row for row in report["services"] if row["id"] == "water")
+    sewage_row = next(row for row in report["services"] if row["id"] == "sewage")
+    assert water_row["severity"] == "ok"
+    assert sewage_row["severity"] == "ok"

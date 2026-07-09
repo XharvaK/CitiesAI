@@ -12,7 +12,6 @@ _WATER_PRESSURE_WARN = {
     "import_dependent_shortage",
     "pressure",
     "capacity_shortage",
-    "import_dependent",
 }
 _SEWAGE_PRESSURE_WARN = {"shortage", "capacity_shortage"}
 _GARBAGE_ACCUMULATION_WARN = 50_000
@@ -55,13 +54,19 @@ def _utility_flow_crisis(
     capacity: float | int | None,
     consumption: float | int | None,
 ) -> bool:
-    if consumption is not None and consumption > 0:
-        if capacity is None or capacity <= 0:
-            return True
-        if fulfillment is not None and fulfillment < _UTILITY_FULFILLMENT_WARN:
-            return True
-        if unfulfilled is not None and unfulfilled > 0:
-            return True
+    if consumption is None or consumption <= 0:
+        return False
+    # Outside connections can meet demand with zero local capacity.
+    if fulfillment is not None and fulfillment >= _UTILITY_FULFILLMENT_WARN:
+        return False
+    if unfulfilled is not None and unfulfilled <= 0:
+        return False
+    if capacity is None or capacity <= 0:
+        return True
+    if fulfillment is not None and fulfillment < _UTILITY_FULFILLMENT_WARN:
+        return True
+    if unfulfilled is not None and unfulfilled > 0:
+        return True
     return False
 
 
@@ -72,7 +77,16 @@ def _utility_finding_severity(
     capacity: float | int | None,
     consumption: float | int | None,
 ) -> str:
-    if consumption is not None and consumption > 0 and (capacity is None or capacity <= 0):
+    demand_unmet = (
+        (fulfillment is not None and fulfillment < _UTILITY_FULFILLMENT_WARN)
+        or (unfulfilled is not None and unfulfilled > 0)
+    )
+    if (
+        consumption is not None
+        and consumption > 0
+        and (capacity is None or capacity <= 0)
+        and demand_unmet
+    ):
         return "error"
     if fulfillment is not None and fulfillment < _UTILITY_FULFILLMENT_ERROR:
         return "error"
@@ -87,19 +101,10 @@ def _water_pressure_triggered(
     water: dict[str, Any],
     snapshot: dict[str, Any],
 ) -> bool:
+    del snapshot  # Outside trade alone is not a shortage signal.
     water_pressure = str(pick(utility, "WaterPressure", "water_pressure") or "")
     if water_pressure in _WATER_PRESSURE_WARN:
         return True
-
-    external = pick_group(snapshot, "ExternalConnections")
-    service_trade = pick(external, "ServiceTrade", "service_trade")
-    trade_water = None
-    if isinstance(service_trade, dict):
-        trade_water = _num(service_trade.get("water"))
-    export_month = _num(pick(water, "ExportPerMonth", "export_per_month"))
-    if trade_water is not None and trade_water > 0:
-        if export_month is None or trade_water > export_month * 2:
-            return True
 
     return _utility_flow_crisis(
         fulfillment=_num(pick(water, "FulfillmentPercent", "fulfillment_percent")),
@@ -114,19 +119,9 @@ def _sewage_pressure_triggered(
     sewage: dict[str, Any],
     snapshot: dict[str, Any],
 ) -> bool:
+    del snapshot  # Outside export alone is not a shortage signal.
     sewage_pressure = str(pick(utility, "SewagePressure", "sewage_pressure") or "")
     if sewage_pressure in _SEWAGE_PRESSURE_WARN:
-        return True
-
-    external = pick_group(snapshot, "ExternalConnections")
-    service_trade = pick(external, "ServiceTrade", "service_trade")
-    trade_sewage = None
-    if isinstance(service_trade, dict):
-        trade_sewage = _num(service_trade.get("sewage"))
-    export_month = _num(pick(sewage, "ExportPerMonth", "export_per_month"))
-    if trade_sewage is not None and trade_sewage > 0:
-        return True
-    if export_month is not None and export_month > 0:
         return True
 
     return _utility_flow_crisis(

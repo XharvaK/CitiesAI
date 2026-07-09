@@ -7,7 +7,11 @@ from pathlib import Path
 import pytest
 
 from citiesai.ask_core import run_ask
-from citiesai.dashboard import extract_headline_metrics, unemployment_from_workforce
+from citiesai.dashboard import (
+    crime_rate_percent,
+    extract_headline_metrics,
+    unemployment_from_workforce,
+)
 from citiesai.env_store import api_key_suffix, read_env_var, save_env_var
 from citiesai.feedback import submit_feedback
 from citiesai.gui.api import api_dashboard, api_setup_preview, api_status, api_version
@@ -42,6 +46,29 @@ def test_collect_status_report_shape() -> None:
     assert "blocking_count" in report
     assert report["issue_count"] == report["blocking_count"]
     assert report["ok"] is (report["blocking_count"] == 0)
+
+
+def test_crime_rate_percent_clamps() -> None:
+    assert crime_rate_percent(104) == 100
+    assert crime_rate_percent(-3) == 0
+    assert crime_rate_percent(8) == 8
+    assert crime_rate_percent(None) is None
+
+
+def test_extract_headline_metrics_clamps_crime_rate(tmp_path: Path) -> None:
+    snapshot = {
+        "city": {"name": "Clampville"},
+        "population": {"total_population": 1000},
+        "official_city_statistics": {
+            "social": {"wellbeing": 50, "health": 50, "crime_rate": 104},
+            "finance": {"money": 1, "income": 1, "expense": 1},
+        },
+    }
+    path = tmp_path / "latest.json"
+    path.write_text("{}", encoding="utf-8")
+    meta = snapshot_meta(snapshot, path=path)
+    metrics = extract_headline_metrics(snapshot, meta)
+    assert metrics["crime_rate"] == 100
 
 
 def test_extract_headline_metrics(vendor_sample: dict) -> None:
@@ -325,9 +352,20 @@ def test_static_index_contains_title() -> None:
     assert b"settings-updates-actions" in body
     assert b"preserveSelection: preserve" in js
     assert b"preserveSelection = true" in js
+    assert b"stabilizeIssueOrder" in js
+    assert b"softRefreshIssueInspector" in js
+    assert b'key: "health"' in js
+    assert b'key: "wellbeing"' in js
+    # Health/wellbeing cards show % like other rate metrics.
+    assert js.count(b'suffix: "%"') >= 6
     # Follow-up composer: one shell border, not a nested textarea border.
     assert b".inspector-ask-composer #issue-ask-input" in css
     assert b"border: none" in css
+    # Sidebar brand keeps mixed-case CitiesAI (not CSS uppercase on .brand-title).
+    assert b'class="brand-title">CitiesAI</div>' in body
+    for chunk in css.split(b".brand-title {"):
+        block = chunk.split(b"}", 1)[0]
+        assert b"text-transform: uppercase" not in block
 
 
 def test_api_focus_bare_and_view(monkeypatch: pytest.MonkeyPatch) -> None:

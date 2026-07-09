@@ -55,6 +55,17 @@ def congestion_percent(congestion_index: Any) -> float | None:
     return round(index * 100.0, 1)
 
 
+def crime_rate_percent(value: Any) -> int | float | None:
+    """Clamp official crime rate to the 0–100% display range."""
+    rate = _num(value)
+    if rate is None:
+        return None
+    clamped = max(0.0, min(100.0, float(rate)))
+    if isinstance(rate, int) or clamped.is_integer():
+        return int(clamped)
+    return round(clamped, 1)
+
+
 def utility_fulfillment_percent(flow: dict[str, Any]) -> float | int | None:
     """Prefer exported fulfillment; infer from capacity vs consumption when missing."""
     direct = _num(pick(flow, "FulfillmentPercent", "fulfillment_percent"))
@@ -132,7 +143,7 @@ def extract_headline_metrics(snapshot: dict[str, Any], meta: SnapshotMeta) -> di
             pick(social, "Health", "health"),
             population=residents,
         ),
-        "crime_rate": pick(social, "CrimeRate", "crime_rate"),
+        "crime_rate": crime_rate_percent(pick(social, "CrimeRate", "crime_rate")),
         "educated_percent": pick(education, "EducatedPercent", "educated_percent"),
         "unemployment_percent": (
             unemployment_percent(

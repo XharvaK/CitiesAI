@@ -2789,8 +2789,7 @@ html, body {
 .brand-title {
   font-family: var(--font);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   font-size: 0.95rem;
 }
 .nav-item {

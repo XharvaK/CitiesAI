@@ -72,6 +72,8 @@ let updateCheckInFlight = false;
 let advisorStyle = "civic";
 let selectedIssueId = null;
 let pendingIssueId = null;
+/** Stable issue id order while the Issues view is open (avoids poll re-rank flicker). */
+let issuesDisplayOrder = [];
 let issueAskAbort = null;
 let issueAskGeneration = 0;
 
@@ -222,6 +224,25 @@ function safeHttpUrl(url) {
 
 function issuesFingerprint(issues) {
   return JSON.stringify((issues || []).map((i) => `${i.id}:${i.severity}`));
+}
+
+function stabilizeIssueOrder(issues, previousOrder) {
+  const byId = new Map((issues || []).map((issue) => [String(issue.id), issue]));
+  const ordered = [];
+  const seen = new Set();
+  for (const id of previousOrder || []) {
+    const row = byId.get(String(id));
+    if (!row) continue;
+    ordered.push(row);
+    seen.add(String(id));
+  }
+  for (const issue of issues || []) {
+    const id = String(issue.id);
+    if (seen.has(id)) continue;
+    ordered.push(issue);
+    seen.add(id);
+  }
+  return ordered;
 }
 
 function drawSparkline(svg, values, projected) {
@@ -552,7 +573,10 @@ function switchView(name, options = {}) {
   if (name === "insights") void loadInsights();
   if (name === "issues") {
     if (options.issueId) pendingIssueId = String(options.issueId);
-    // Auto-select the top issue only on first open; polls must preserve selection.
+    // Fresh entry without a sticky selection: allow ranked order + top auto-select.
+    if (!selectedIssueId && !pendingIssueId) {
+      issuesDisplayOrder = [];
+    }
     const preserve = Boolean(selectedIssueId || pendingIssueId);
     void refreshIssues({ toastOnError: true, preserveSelection: preserve });
   }
@@ -574,14 +598,17 @@ function applyIssuesData(data, options = {}) {
   lastIssuesFingerprint = fp;
   updateIssuesNavLabel(lastIssues);
   if ($("view-issues").classList.contains("active")) {
-    // Never follow Co-Mayor rotation: keep the user's selection while reading.
+    // Hard sticky: never follow Co-Mayor / re-rank while reading.
     const preserve =
       Boolean(options.preserveSelection) ||
       Boolean(selectedIssueId) ||
+      Boolean(pendingIssueId) ||
       issueInspectorBusy();
     if (changed || options.force || !document.querySelector(".issue-item-btn")) {
       renderIssues(lastIssues, { preserveSelection: preserve });
     }
+  } else {
+    issuesDisplayOrder = [];
   }
   if (lastStatus) {
     renderHealthStrip(lastStatus);
@@ -785,7 +812,8 @@ const METRIC_DEFS = [
     label: "Health",
     group: "social",
     decimals: 1,
-    description: "Average citizen health index (0–100).",
+    suffix: "%",
+    description: "Average citizen health index (0–100%).",
   },
   {
     key: "congestion_percent",
@@ -801,7 +829,8 @@ const METRIC_DEFS = [
     label: "Wellbeing",
     group: "social",
     decimals: 1,
-    description: "Average citizen wellbeing index (0–100).",
+    suffix: "%",
+    description: "Average citizen wellbeing index (0–100%).",
   },
   {
     key: "unemployment_percent",
@@ -1320,6 +1349,44 @@ function selectIssue(issueId, options = {}) {
   renderIssueInspector(issue || null, options);
 }
 
+function softRefreshIssueInspector(issue) {
+  if (!issue) return;
+  const empty = $("issue-inspector-empty");
+  const body = $("issue-inspector-body");
+  if (!empty || !body || body.hidden) return;
+  const severity = issue.severity || "warn";
+  const sevEl = $("issue-inspector-severity");
+  if (sevEl) {
+    sevEl.textContent = severity === "error" ? "Critical" : severity === "info" ? "Info" : "Warning";
+    sevEl.className = `severity-label severity-${escapeAttr(severity)}`;
+  }
+  const title = $("issue-inspector-title");
+  if (title) title.textContent = issue.title || "Issue";
+  const detail = $("issue-inspector-detail");
+  if (detail) detail.textContent = issue.detail || "";
+  const evidence = issue.evidence || [];
+  const evidenceEl = $("issue-inspector-evidence");
+  if (evidenceEl) {
+    evidenceEl.innerHTML = evidence.length
+      ? evidence.map((row) => `<li><strong>${escapeHtml(row.label || "Evidence")}:</strong> ${escapeHtml(row.value || "")}</li>`).join("")
+      : `<li class="muted">No structured evidence.</li>`;
+  }
+  const causes = issue.likely_causes || [];
+  const causesEl = $("issue-inspector-causes");
+  if (causesEl) {
+    causesEl.innerHTML = causes.length
+      ? causes.map((row) => `<li>${escapeHtml(row)}</li>`).join("")
+      : `<li class="muted">No likely causes listed.</li>`;
+  }
+  const actions = issue.actions || [];
+  const actionsEl = $("issue-inspector-actions");
+  if (actionsEl) {
+    actionsEl.innerHTML = actions.length
+      ? actions.map((row) => `<li>${escapeHtml(row)}</li>`).join("")
+      : `<li class="muted">No recommended actions listed.</li>`;
+  }
+}
+
 function renderIssueInspector(issue, options = {}) {
   const preserveComposer = Boolean(options.preserveComposer);
   const empty = $("issue-inspector-empty");
@@ -1428,12 +1495,20 @@ function renderIssues(issues, options = {}) {
         <p class="issues-empty-lead muted small">No setup or city issues right now.</p>
       </div>
     </div>`;
+    issuesDisplayOrder = [];
     selectIssue(null);
     return;
   }
 
-  const cityIssues = issues.filter((issue) => issue.kind === "city");
-  const setupIssues = issues.filter((issue) => issue.kind !== "city");
+  // Keep list order stable while reading; re-rank only on fresh entry (empty order).
+  const displayIssues =
+    preserveSelection && issuesDisplayOrder.length
+      ? stabilizeIssueOrder(issues, issuesDisplayOrder)
+      : issues.slice();
+  issuesDisplayOrder = displayIssues.map((issue) => String(issue.id));
+
+  const cityIssues = displayIssues.filter((issue) => issue.kind === "city");
+  const setupIssues = displayIssues.filter((issue) => issue.kind !== "city");
   const sections = [
     renderIssueSection("Your city", cityIssues),
     renderIssueSection("Setup &amp; app", setupIssues),
@@ -1448,18 +1523,30 @@ function renderIssues(issues, options = {}) {
   let preferred = pendingIssueId || null;
   pendingIssueId = null;
   if (!preferred && selectedIssueId) {
-    preferred = issues.some((issue) => String(issue.id) === String(selectedIssueId))
+    preferred = displayIssues.some((issue) => String(issue.id) === String(selectedIssueId))
       ? selectedIssueId
       : null;
   }
+  // Hard sticky: never auto-advance to another issue while preserving selection.
   if (!preferred && !preserveSelection) {
-    preferred = issues[0]?.id ?? null;
+    preferred = displayIssues[0]?.id ?? null;
   }
-  const keepComposer =
-    preserveSelection ||
-    issueInspectorBusy() ||
-    (Boolean(preferred) && String(preferred) === String(selectedIssueId));
-  selectIssue(preferred, { preserveComposer: keepComposer && Boolean(preferred) });
+
+  const sameSelection =
+    Boolean(preferred) && String(preferred) === String(selectedIssueId);
+  if (sameSelection) {
+    document.querySelectorAll(".issue-item").forEach((el) => {
+      el.classList.toggle("selected", el.dataset.issueId === selectedIssueId);
+    });
+    const issue = displayIssues.find((row) => String(row.id) === String(selectedIssueId));
+    softRefreshIssueInspector(issue || null);
+  } else {
+    const keepComposer =
+      preserveSelection ||
+      issueInspectorBusy() ||
+      (Boolean(preferred) && String(preferred) === String(selectedIssueId));
+    selectIssue(preferred, { preserveComposer: keepComposer && Boolean(preferred) });
+  }
   if (activeId) {
     list.querySelector(`.issue-item-btn[data-issue-id="${CSS.escape(activeId)}"]`)?.focus({ preventScroll: true });
   }
