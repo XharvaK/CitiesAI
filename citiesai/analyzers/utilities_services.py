@@ -17,6 +17,8 @@ _WATER_PRESSURE_WARN = {
 _SEWAGE_PRESSURE_WARN = {"shortage", "capacity_shortage"}
 _GARBAGE_ACCUMULATION_WARN = 50_000
 _CITY_SERVICE_FILL_LOW = 80
+_UTILITY_FULFILLMENT_WARN = 85
+_UTILITY_FULFILLMENT_ERROR = 50
 
 
 def _num(value: Any) -> float | int | None:
@@ -46,6 +48,40 @@ def _fulfillment_detail(fulfillment: float | int | None, *, noun: str) -> str:
     return f"{noun.capitalize()} data unavailable"
 
 
+def _utility_flow_crisis(
+    *,
+    fulfillment: float | int | None,
+    unfulfilled: float | int | None,
+    capacity: float | int | None,
+    consumption: float | int | None,
+) -> bool:
+    if consumption is not None and consumption > 0:
+        if capacity is None or capacity <= 0:
+            return True
+        if fulfillment is not None and fulfillment < _UTILITY_FULFILLMENT_WARN:
+            return True
+        if unfulfilled is not None and unfulfilled > 0:
+            return True
+    return False
+
+
+def _utility_finding_severity(
+    *,
+    fulfillment: float | int | None,
+    unfulfilled: float | int | None,
+    capacity: float | int | None,
+    consumption: float | int | None,
+) -> str:
+    if consumption is not None and consumption > 0 and (capacity is None or capacity <= 0):
+        return "error"
+    if fulfillment is not None and fulfillment < _UTILITY_FULFILLMENT_ERROR:
+        return "error"
+    if unfulfilled is not None and consumption is not None and consumption > 0:
+        if unfulfilled >= consumption * 0.5:
+            return "error"
+    return "warn"
+
+
 def _water_pressure_triggered(
     utility: dict[str, Any],
     water: dict[str, Any],
@@ -64,7 +100,13 @@ def _water_pressure_triggered(
     if trade_water is not None and trade_water > 0:
         if export_month is None or trade_water > export_month * 2:
             return True
-    return False
+
+    return _utility_flow_crisis(
+        fulfillment=_num(pick(water, "FulfillmentPercent", "fulfillment_percent")),
+        unfulfilled=_num(pick(water, "UnfulfilledConsumption", "unfulfilled_consumption")),
+        capacity=_num(pick(water, "Capacity", "capacity")),
+        consumption=_num(pick(water, "Consumption", "consumption")),
+    )
 
 
 def _sewage_pressure_triggered(
@@ -86,7 +128,13 @@ def _sewage_pressure_triggered(
         return True
     if export_month is not None and export_month > 0:
         return True
-    return False
+
+    return _utility_flow_crisis(
+        fulfillment=_num(pick(sewage, "FulfillmentPercent", "fulfillment_percent")),
+        unfulfilled=_num(pick(sewage, "UnfulfilledConsumption", "unfulfilled_consumption")),
+        capacity=_num(pick(sewage, "Capacity", "capacity")),
+        consumption=_num(pick(sewage, "Consumption", "consumption")),
+    )
 
 
 def analyze_utilities_services(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -117,11 +165,15 @@ def analyze_utilities_services(snapshot: dict[str, Any]) -> dict[str, Any]:
     sewage = pick_group(utility, "Sewage")
     water_fulfillment = _num(pick(water, "FulfillmentPercent", "fulfillment_percent"))
     water_unfulfilled = _num(pick(water, "UnfulfilledConsumption", "unfulfilled_consumption"))
+    water_capacity = _num(pick(water, "Capacity", "capacity"))
+    water_consumption = _num(pick(water, "Consumption", "consumption"))
     water_import = _num(pick(water, "ImportPerMonth", "import_per_month"))
     water_pressure = str(pick(utility, "WaterPressure", "water_pressure") or "unknown")
 
     sewage_fulfillment = _num(pick(sewage, "FulfillmentPercent", "fulfillment_percent"))
     sewage_unfulfilled = _num(pick(sewage, "UnfulfilledConsumption", "unfulfilled_consumption"))
+    sewage_capacity = _num(pick(sewage, "Capacity", "capacity"))
+    sewage_consumption = _num(pick(sewage, "Consumption", "consumption"))
     sewage_export = _num(pick(sewage, "ExportPerMonth", "export_per_month"))
     sewage_pressure = str(pick(utility, "SewagePressure", "sewage_pressure") or "unknown")
 
@@ -152,7 +204,31 @@ def analyze_utilities_services(snapshot: dict[str, Any]) -> dict[str, Any]:
     electricity_detail = _fulfillment_detail(electricity_fulfillment, noun="power")
     if electricity_pressure not in ("ok", "unknown", ""):
         electricity_detail = f"{electricity_detail} · {electricity_pressure.replace('_', ' ')}"
-    electricity_severity = "warn" if electricity_pressure in _ELECTRICITY_PRESSURE_WARN else "ok"
+    electricity_flow_crisis = _utility_flow_crisis(
+        fulfillment=electricity_fulfillment,
+        unfulfilled=(
+            (electricity_consumption - electricity_fulfilled)
+            if electricity_consumption is not None and electricity_fulfilled is not None
+            else None
+        ),
+        capacity=electricity_capacity,
+        consumption=electricity_consumption,
+    )
+    electricity_hot = electricity_pressure in _ELECTRICITY_PRESSURE_WARN or electricity_flow_crisis
+    electricity_severity = (
+        _utility_finding_severity(
+            fulfillment=electricity_fulfillment,
+            unfulfilled=(
+                (electricity_consumption - electricity_fulfilled)
+                if electricity_consumption is not None and electricity_fulfilled is not None
+                else None
+            ),
+            capacity=electricity_capacity,
+            consumption=electricity_consumption,
+        )
+        if electricity_hot
+        else "ok"
+    )
     services.append(
         _service_row(
             row_id="electricity",
@@ -161,7 +237,7 @@ def analyze_utilities_services(snapshot: dict[str, Any]) -> dict[str, Any]:
             severity=electricity_severity,
         )
     )
-    if electricity_pressure in _ELECTRICITY_PRESSURE_WARN:
+    if electricity_hot:
         parts = [f"Electricity pressure: {electricity_pressure.replace('_', ' ')}"]
         if electricity_fulfillment is not None:
             parts.append(f"fulfillment {electricity_fulfillment:.0f}%")
@@ -170,7 +246,7 @@ def analyze_utilities_services(snapshot: dict[str, Any]) -> dict[str, Any]:
         findings.append(
             {
                 "id": "electricity_pressure",
-                "severity": "warn",
+                "severity": electricity_severity,
                 "title": "Electricity shortfall",
                 "detail": " · ".join(parts),
                 "ask_prompt": "Why is electricity service failing in my city?",
@@ -182,7 +258,17 @@ def analyze_utilities_services(snapshot: dict[str, Any]) -> dict[str, Any]:
         water_detail = f"{water_detail} · {int(water_unfulfilled)} unfulfilled"
     if water_import is not None and water_import > 0:
         water_detail = f"{water_detail} · importing {int(water_import)}/month"
-    water_severity = "warn" if _water_pressure_triggered(utility, water, snapshot) else "ok"
+    water_hot = _water_pressure_triggered(utility, water, snapshot)
+    water_severity = (
+        _utility_finding_severity(
+            fulfillment=water_fulfillment,
+            unfulfilled=water_unfulfilled,
+            capacity=water_capacity,
+            consumption=water_consumption,
+        )
+        if water_hot
+        else "ok"
+    )
     services.append(
         _service_row(
             row_id="water",
@@ -191,11 +277,11 @@ def analyze_utilities_services(snapshot: dict[str, Any]) -> dict[str, Any]:
             severity=water_severity,
         )
     )
-    if water_severity == "warn":
+    if water_hot:
         findings.append(
             {
                 "id": "water_pressure",
-                "severity": "warn",
+                "severity": water_severity,
                 "title": "Water service under pressure",
                 "detail": water_detail,
                 "ask_prompt": "How do I fix water shortages and pumping capacity?",
@@ -207,7 +293,17 @@ def analyze_utilities_services(snapshot: dict[str, Any]) -> dict[str, Any]:
         sewage_detail = f"{sewage_detail} · {int(sewage_unfulfilled)} unfulfilled"
     if sewage_export is not None and sewage_export > 0:
         sewage_detail = f"{sewage_detail} · exporting {int(sewage_export)}/month"
-    sewage_severity = "warn" if _sewage_pressure_triggered(utility, sewage, snapshot) else "ok"
+    sewage_hot = _sewage_pressure_triggered(utility, sewage, snapshot)
+    sewage_severity = (
+        _utility_finding_severity(
+            fulfillment=sewage_fulfillment,
+            unfulfilled=sewage_unfulfilled,
+            capacity=sewage_capacity,
+            consumption=sewage_consumption,
+        )
+        if sewage_hot
+        else "ok"
+    )
     services.append(
         _service_row(
             row_id="sewage",
@@ -216,11 +312,11 @@ def analyze_utilities_services(snapshot: dict[str, Any]) -> dict[str, Any]:
             severity=sewage_severity,
         )
     )
-    if sewage_severity == "warn":
+    if sewage_hot:
         findings.append(
             {
                 "id": "sewage_pressure",
-                "severity": "warn",
+                "severity": sewage_severity,
                 "title": "Sewage and treatment under pressure",
                 "detail": sewage_detail,
                 "ask_prompt": "How do I fix sewage and water treatment in my city?",

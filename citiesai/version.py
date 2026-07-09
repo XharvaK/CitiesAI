@@ -6,7 +6,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-_FALLBACK_VERSION = "0.7.2"
+_FALLBACK_VERSION = "0.8.0"
 
 
 def _pyproject_path() -> Path | None:

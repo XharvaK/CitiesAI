@@ -41,6 +41,23 @@ def test_build_system_prompt_hardened() -> None:
     assert f"CitiesAI v{__version__}" in agentic
     assert "fetch metric groups" in agentic
 
+
+def test_build_system_prompt_advisor_styles_change_tone_only() -> None:
+    civic = build_system_prompt(advisor_style="civic")
+    conversational = build_system_prompt(advisor_style="conversational")
+    analyst = build_system_prompt(advisor_style="analyst")
+    assert "Advisor style: Civic" in civic
+    assert "Advisor style: Conversational" in conversational
+    assert "Advisor style: Analyst" in analyst
+    # Shared factual invariants remain across styles.
+    for prompt in (civic, conversational, analyst):
+        assert "Never invent metrics" in prompt
+        assert "No Sources section" in prompt
+        assert "concrete in-game actions" in prompt
+    assert "Warm, game-native" in conversational
+    assert "Technical and detailed" in analyst
+    assert civic != conversational != analyst
+
 def test_chat_payload_omits_temperature_for_gpt5() -> None:
     settings = LLMSettings(
         base_url="https://api.openai.com/v1",

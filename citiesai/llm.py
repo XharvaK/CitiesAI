@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .agent_tools import TOOL_DEFINITIONS, execute_tool
-from .config import DEFAULT_MAX_TOOL_ROUNDS, CitiesAIConfig
+from .config import DEFAULT_MAX_TOOL_ROUNDS, CitiesAIConfig, normalize_advisor_style
 from .version import __version__
 
 
@@ -91,7 +91,35 @@ def max_tool_rounds(cfg: CitiesAIConfig) -> int:
     return max(1, cfg.llm_max_tool_rounds or DEFAULT_MAX_TOOL_ROUNDS)
 
 
-def build_system_prompt(*, agentic: bool = False, force_answer: bool = False) -> str:
+_ADVISOR_STYLE_DIRECTIVES = {
+    "civic": (
+        "Advisor style: Civic.\n"
+        "- Calm, direct, and concise municipal guidance.\n"
+        "- Prefer short diagnosis and a tight action list.\n"
+        "- Stay under ~150 words unless the user asks for depth or the question is setup/meta."
+    ),
+    "conversational": (
+        "Advisor style: Conversational.\n"
+        "- Warm, game-native co-mayor voice in second person (\"your city\").\n"
+        "- Keep the same evidence rules and numbered actions, but sound more natural.\n"
+        "- Stay under ~180 words unless the user asks for depth or the question is setup/meta."
+    ),
+    "analyst": (
+        "Advisor style: Analyst.\n"
+        "- Technical and detailed; cite metric names, units, and comparisons from the brief.\n"
+        "- Still open with diagnosis, then numbered actions; you may add a short evidence note.\n"
+        "- Stay under ~300 words unless the user asks for exhaustive depth or the question is setup/meta."
+    ),
+}
+
+
+def build_system_prompt(
+    *,
+    agentic: bool = False,
+    force_answer: bool = False,
+    advisor_style: str = "civic",
+) -> str:
+    style = normalize_advisor_style(advisor_style)
     base = (
         f"You are CitiesAI v{__version__}, the Windows desktop advisor app the user is "
         "running. You advise on Cities: Skylines II using their live city snapshot and "
@@ -120,7 +148,7 @@ def build_system_prompt(*, agentic: bool = False, force_answer: bool = False) ->
         "problem using the city's actual numbers.\n"
         "- Then one numbered list of 3-5 concrete in-game actions (what to build, "
         "budget sliders, policies, zoning). Most impactful first. Use only this single "
-        "list — do not number the diagnosis or add a second outline.\n\n"
+        "list - do not number the diagnosis or add a second outline.\n\n"
         "Evidence:\n"
         "- Never invent metrics, patch versions, update channels, or causes not in the "
         "city brief or retrieved sources.\n"
@@ -136,17 +164,16 @@ def build_system_prompt(*, agentic: bool = False, force_answer: bool = False) ->
         "- Wellbeing and health in the brief are 0-100 indices when shown.\n"
         "- Population in the brief prefers residents; do not treat commuters/tourists as "
         "residents.\n"
-        "- Education employment rate and workforce employed/unemployed may both appear — "
+        "- Education employment rate and workforce employed/unemployed may both appear - "
         "cite the brief values; do not contradict them.\n"
         "- If the brief shows transit lines: 0 but the user asks about transit, note the "
         "mismatch before advising routes.\n\n"
         "Guardrails:\n"
-        "- Cities: Skylines II only — do not cite Cities: Skylines (2015) mechanics.\n"
+        "- Cities: Skylines II only - do not cite Cities: Skylines (2015) mechanics.\n"
         "- No cheats, save editing, or console commands.\n"
         "- No preamble, no restating the question, no generic filler.\n"
         "- No headers unless the answer genuinely needs them.\n"
-        "- Stay under ~150 words unless the user asks for depth or the question is "
-        "setup/meta."
+        f"{_ADVISOR_STYLE_DIRECTIVES[style]}"
     )
     if agentic:
         base += (
@@ -259,11 +286,20 @@ def _complete_chat(
     return _parse_message(data)
 
 
-def _force_final_answer(messages: list[dict[str, Any]], settings: LLMSettings) -> str:
+def _force_final_answer(
+    messages: list[dict[str, Any]],
+    settings: LLMSettings,
+    *,
+    advisor_style: str = "civic",
+) -> str:
     final_messages = list(messages)
     final_messages[0] = {
         "role": "system",
-        "content": build_system_prompt(agentic=True, force_answer=True),
+        "content": build_system_prompt(
+            agentic=True,
+            force_answer=True,
+            advisor_style=advisor_style,
+        ),
     }
     message = _complete_chat(final_messages, settings)
     content = message.get("content")
@@ -296,8 +332,12 @@ def iter_agentic_answer(
         parts.append(f"## Question\n{question}")
         user_content = "\n\n".join(parts)
 
+    style = getattr(cfg, "advisor_style", "civic")
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_system_prompt(agentic=True)},
+        {
+            "role": "system",
+            "content": build_system_prompt(agentic=True, advisor_style=style),
+        },
         {"role": "user", "content": user_content},
     ]
     if history_messages:
@@ -351,7 +391,7 @@ def iter_agentic_answer(
 
     yield ("status", "Wrapping up answer…")
     try:
-        answer = _force_final_answer(messages, settings)
+        answer = _force_final_answer(messages, settings, advisor_style=style)
         yield (
             "result",
             AgenticResult(
@@ -425,8 +465,12 @@ def generate_answer(
             "No LLM API key found. Add your Mistral key in Settings or set MISTRAL_API_KEY."
         )
 
+    style = getattr(cfg, "advisor_style", "civic")
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_system_prompt()},
+        {
+            "role": "system",
+            "content": build_system_prompt(advisor_style=style),
+        },
         {"role": "user", "content": prompt},
     ]
     if history_messages:
@@ -450,8 +494,12 @@ def stream_answer(
             "No LLM API key found. Add your Mistral key in Settings or set MISTRAL_API_KEY."
         )
 
+    style = getattr(cfg, "advisor_style", "civic")
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_system_prompt()},
+        {
+            "role": "system",
+            "content": build_system_prompt(advisor_style=style),
+        },
         {"role": "user", "content": prompt},
     ]
     if history_messages:

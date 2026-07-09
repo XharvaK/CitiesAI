@@ -3,51 +3,147 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CitiesAI HUD</title>
-  <link rel="stylesheet" href="/static/app.css" />
+  <title>CitiesAI Co-Mayor</title>
   <style>
-    body {
+    :root {
+      --hud-bg: #14120e;
+      --hud-text: #f2ead3;
+      --hud-muted: #9a9080;
+      --hud-ok: #8faa7a;
+      --hud-warn: #c4a05a;
+      --hud-bad: #b53737;
+      --hud-border: rgba(242, 234, 211, 0.12);
+      --hud-radius-pill: 999px;
+      --hud-radius-panel: 22px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
       margin: 0;
-      background: var(--paper);
-      color: var(--body);
-      font-family: var(--font);
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--hud-bg);
+      color: var(--hud-text);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
     }
-    body.hud-overlay {
-      background: color-mix(in srgb, var(--paper) 88%, transparent);
+    .stage {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--hud-bg);
     }
-    .hud {
-      padding: 8px 10px 6px;
-      min-width: 0;
+    .hud-shell {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      background: var(--hud-bg);
+      overflow: hidden;
     }
-    .hud-head {
+    .hud-shell.mode-compact {
+      border-radius: 0;
+    }
+    .hud-shell.mode-ask {
+      border-radius: 0;
+    }
+
+    .hud-compact {
       display: flex;
       align-items: center;
-      gap: 0.4rem;
-      margin-bottom: 6px;
+      gap: 10px;
+      padding: 0 12px 0 14px;
+      height: 44px;
+      flex-shrink: 0;
       min-width: 0;
     }
-    body.hud-overlay .hud-head {
+    body.hud-overlay .hud-compact {
       -webkit-app-region: drag;
       app-region: drag;
-      cursor: default;
     }
-    .hud-title {
+    .hud-grade {
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       font-size: 11px;
-      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      border: 1px solid var(--hud-border);
+      -webkit-app-region: no-drag;
+      app-region: no-drag;
+    }
+    .hud-grade.grade-A { color: var(--hud-ok); border-color: rgba(143, 170, 122, 0.45); }
+    .hud-grade.grade-B { color: #b5ab95; border-color: rgba(181, 171, 149, 0.45); }
+    .hud-grade.grade-C { color: var(--hud-warn); border-color: rgba(196, 160, 90, 0.45); }
+    .hud-grade.grade-D { color: #d4956a; border-color: rgba(212, 149, 106, 0.45); }
+    .hud-grade.grade-F { color: var(--hud-bad); border-color: rgba(181, 55, 55, 0.45); }
+
+    .hud-priority {
+      flex: 1;
+      min-width: 120px;
+      max-width: 280px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.04);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--hud-text);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      flex: 1;
-      min-width: 0;
+      -webkit-app-region: no-drag;
+      app-region: no-drag;
     }
-    .hud-stale-dot {
+    .hud-priority:hover { background: rgba(255, 255, 255, 0.08); }
+    .hud-priority:disabled {
+      opacity: 0.55;
+      cursor: default;
+      pointer-events: none;
+    }
+    .hud-priority.severity-warn {
+      border-color: rgba(196, 160, 90, 0.35);
+      background: rgba(196, 160, 90, 0.08);
+    }
+    .hud-priority.severity-error {
+      border-color: rgba(181, 55, 55, 0.4);
+      background: rgba(181, 55, 55, 0.1);
+    }
+    .hud-priority-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--hud-ok);
+    }
+    .hud-priority.severity-warn .hud-priority-dot { background: var(--hud-warn); }
+    .hud-priority.severity-error .hud-priority-dot { background: var(--hud-bad); }
+    #hud-priority-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hud-fresh {
       width: 7px;
       height: 7px;
-      border-radius: 999px;
-      background: var(--ok);
+      border-radius: 50%;
       flex-shrink: 0;
+      background: var(--hud-ok);
+      -webkit-app-region: no-drag;
+      app-region: no-drag;
     }
-    .hud-stale-dot.stale { background: var(--warn); }
+    .hud-fresh.stale { background: var(--hud-warn); }
     .hud-close {
       -webkit-app-region: no-drag;
       app-region: no-drag;
@@ -58,209 +154,625 @@
       border: none;
       border-radius: 4px;
       background: transparent;
-      color: var(--muted);
+      color: var(--hud-muted);
       font-size: 16px;
       line-height: 1;
       cursor: pointer;
     }
     .hud-close:hover {
-      color: var(--ink);
-      background: color-mix(in srgb, var(--ink) 8%, transparent);
+      color: var(--hud-text);
+      background: rgba(255, 255, 255, 0.08);
     }
-    .hud-metrics {
+
+    .hud-ask {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      -webkit-app-region: no-drag;
+      app-region: no-drag;
+    }
+    .hud-shell.mode-ask .hud-compact { display: none; }
+    .hud-shell.mode-ask .hud-ask { display: flex; }
+
+    .hud-ask-head {
       display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.35rem 0.45rem;
-      font-size: 12px;
-      line-height: 1.25;
-      -webkit-app-region: no-drag;
-      app-region: no-drag;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--hud-border);
+      flex-shrink: 0;
     }
-    .hud-metric {
-      display: inline-flex;
-      align-items: baseline;
-      flex-wrap: wrap;
-      gap: 0.25rem;
-      min-width: 0;
-    }
-    .hud-metric-value {
-      font-weight: 600;
-      color: var(--ink);
-      font-size: 13px;
-    }
-    .hud-hourly {
-      font-size: 10px;
-      color: var(--muted);
-    }
-    .hud-hourly.up { color: var(--ok); }
-    .hud-hourly.down { color: var(--bad); }
-    .hud-sep {
-      color: var(--muted);
-      opacity: 0.55;
-      user-select: none;
-    }
-    .hud-grade-lg .grade-badge {
-      width: 1.75rem;
-      height: 1.75rem;
-      font-size: 0.78rem;
-    }
-    .hud-alert {
-      margin-top: 6px;
-      font-size: 10px;
-      color: var(--warn);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      min-height: 13px;
-      -webkit-app-region: no-drag;
-      app-region: no-drag;
-    }
-    .hud-alert.severity-error { color: var(--bad); }
-    .hud-footer {
-      margin-top: 4px;
+    .hud-ask-eyebrow {
       font-size: 9px;
-      color: var(--muted);
-      text-align: right;
-      -webkit-app-region: no-drag;
-      app-region: no-drag;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--hud-muted);
+      margin-bottom: 4px;
+    }
+    .hud-ask-title {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.35;
+      color: var(--hud-text);
+    }
+    .hud-ask-title.severity-warn { color: var(--hud-warn); }
+    .hud-ask-title.severity-error { color: var(--hud-bad); }
+
+    .hud-thread {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .hud-bubble {
+      max-width: 100%;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .hud-bubble.user {
+      align-self: flex-end;
+      background: rgba(242, 234, 211, 0.1);
+      border: 1px solid var(--hud-border);
+    }
+    .hud-bubble.assistant {
+      align-self: flex-start;
+      background: rgba(0, 0, 0, 0.25);
+    }
+    .hud-bubble.assistant .typing {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+      color: var(--hud-muted);
+    }
+    .hud-bubble.assistant .typing span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--hud-muted);
+      animation: hud-pulse 1.2s ease-in-out infinite;
+    }
+    .hud-bubble.assistant .typing span:nth-child(2) { animation-delay: 0.15s; }
+    .hud-bubble.assistant .typing span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes hud-pulse {
+      0%, 80%, 100% { opacity: 0.35; transform: scale(0.85); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+    .hud-bubble p { margin: 0 0 0.5em; }
+    .hud-bubble p:last-child { margin-bottom: 0; }
+    .hud-bubble .muted { color: var(--hud-muted); }
+
+    .hud-ask-foot {
+      flex-shrink: 0;
+      padding: 10px 12px 12px;
+      border-top: 1px solid var(--hud-border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .hud-compose {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .hud-compose textarea {
+      flex: 1;
+      min-height: 36px;
+      max-height: 80px;
+      resize: none;
+      border: 1px solid var(--hud-border);
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.25);
+      color: var(--hud-text);
+      font: inherit;
+      font-size: 12px;
+      padding: 8px 10px;
+      outline: none;
+    }
+    .hud-compose textarea:focus {
+      border-color: rgba(242, 234, 211, 0.25);
+    }
+    .hud-send {
+      flex-shrink: 0;
+      height: 36px;
+      padding: 0 14px;
+      border: 1px solid var(--hud-border);
+      border-radius: 10px;
+      background: rgba(242, 234, 211, 0.08);
+      color: var(--hud-text);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .hud-send:disabled { opacity: 0.45; cursor: default; }
+    .hud-send:not(:disabled):hover { background: rgba(242, 234, 211, 0.14); }
+
+    .hud-back {
+      width: 100%;
+      height: 44px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(143, 170, 122, 0.4) 0%, rgba(143, 170, 122, 0.22) 100%);
+      color: var(--hud-text);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .hud-back:hover { filter: brightness(1.08); }
+    .hud-back:active { transform: scale(0.98); }
+
+    .hud-offline {
+      display: none;
+      padding: 0 14px;
+      font-size: 11px;
+      color: var(--hud-warn);
+      line-height: 44px;
+      white-space: nowrap;
+    }
+    .hud-shell.offline.mode-compact .hud-offline { display: block; }
+    .hud-shell.offline .hud-priority { opacity: 0.5; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hud-bubble.assistant .typing span { animation: none; opacity: 0.6; }
     }
   </style>
 </head>
 <body>
-  <div class="hud">
-    <div class="hud-head">
-      <div class="hud-title" id="hud-city">CitiesAI HUD</div>
-      <span class="hud-stale-dot" id="hud-stale-dot" title="Export freshness"></span>
-      <button type="button" class="hud-close" id="hud-close" hidden aria-label="Close HUD" title="Close">×</button>
+  <div class="stage">
+    <div class="hud-shell mode-compact" id="hud-shell">
+      <div class="hud-compact" id="hud-compact">
+        <span class="hud-grade grade-NA" id="hud-grade" aria-label="City grade">—</span>
+        <button type="button" class="hud-priority" id="hud-priority" disabled>
+          <span class="hud-priority-dot" aria-hidden="true"></span>
+          <span id="hud-priority-text">All clear</span>
+        </button>
+        <span class="hud-fresh" id="hud-fresh" title="Export freshness"></span>
+        <button type="button" class="hud-close" id="hud-close" hidden aria-label="Close Co-Mayor" title="Close">×</button>
+      </div>
+
+      <div class="hud-offline" id="hud-offline">Enable CS2 Data Export mod</div>
+
+      <div class="hud-ask" id="hud-ask" aria-label="Advisor chat">
+        <div class="hud-ask-head">
+          <div>
+            <div class="hud-ask-eyebrow">Advisor</div>
+            <div class="hud-ask-title" id="hud-ask-title">City issue</div>
+          </div>
+        </div>
+        <div class="hud-thread" id="hud-thread" role="log" aria-live="polite"></div>
+        <div class="hud-ask-foot">
+          <form class="hud-compose" id="hud-compose">
+            <textarea id="hud-input" rows="1" placeholder="Ask a follow-up…" aria-label="Follow-up question"></textarea>
+            <button type="submit" class="hud-send" id="hud-send" disabled>Send</button>
+          </form>
+          <button type="button" class="hud-back" id="hud-back">Back to game</button>
+        </div>
+      </div>
     </div>
-    <div class="hud-metrics">
-      <span class="hud-metric">
-        <span class="hud-metric-value" id="hud-treasury">—</span>
-        <span class="hud-hourly" id="hud-treasury-hr"></span>
-      </span>
-      <span class="hud-sep" aria-hidden="true">·</span>
-      <span class="hud-metric">
-        <span class="hud-metric-value" id="hud-pop">—</span>
-        <span class="hud-hourly" id="hud-pop-hr"></span>
-      </span>
-      <span class="hud-sep" aria-hidden="true">·</span>
-      <span class="hud-grade-lg" id="hud-grade">—</span>
-    </div>
-    <div class="hud-alert" id="hud-alert"></div>
-    <div class="hud-footer" id="hud-footer">Fresh</div>
   </div>
+
   <script>
     const POLL_MS = 5000;
+    const ASK_TIMEOUT_MS = 480_000;
+    const COMPACT_HEIGHT = 44;
 
-    const isOverlay = new URLSearchParams(location.search).get("overlay") === "1";
+    const params = new URLSearchParams(location.search);
+    const isOverlay = params.get("overlay") === "1";
+    const preview = params.get("preview");
+
+    const shell = document.getElementById("hud-shell");
+    const priorityBtn = document.getElementById("hud-priority");
+    const threadEl = document.getElementById("hud-thread");
+    const askTitleEl = document.getElementById("hud-ask-title");
+    const inputEl = document.getElementById("hud-input");
+    const sendBtn = document.getElementById("hud-send");
+    const composeForm = document.getElementById("hud-compose");
+
+    let uiMode = "compact";
+    let lastPriority = null;
+    let lastHudOk = true;
+    let askAbort = null;
+    let askBusy = false;
+    let lastCompactWidth = 280;
+
     if (isOverlay) {
       document.body.classList.add("hud-overlay");
       const closeBtn = document.getElementById("hud-close");
       if (closeBtn) closeBtn.hidden = false;
     }
 
-    document.getElementById("hud-close")?.addEventListener("click", async () => {
-      if (window.pywebview?.api?.close_hud) {
-        try {
-          await window.pywebview.api.close_hud();
-        } catch { /* ignore */ }
-        return;
-      }
-      window.close();
-    });
-
-    function fmtCompact(n) {
-      if (n == null || Number.isNaN(n)) return "—";
-      const abs = Math.abs(Number(n));
-      if (abs >= 1_000_000) return `${(Number(n) / 1_000_000).toFixed(1)}M`;
-      if (abs >= 10_000) return `${Math.round(Number(n) / 1000)}k`;
-      return Math.round(Number(n)).toLocaleString();
+    function sessionToken() {
+      return document.querySelector('meta[name="citiesai-token"]')?.content || "";
     }
 
-    function fmtHourly(value, { currency = false } = {}) {
-      if (value == null || Number.isNaN(value)) return { text: "", cls: "" };
-      const rounded = Math.round(Number(value));
-      if (rounded === 0) return { text: "", cls: "" };
-      const body = fmtCompact(Math.abs(rounded));
-      const sign = rounded > 0 ? "+" : "-";
-      const prefix = currency ? `${sign}¢` : sign;
-      return { text: `${prefix}${body}/h`, cls: rounded > 0 ? "up" : "down" };
+    function escapeHtml(text) {
+      return String(text ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
     }
 
     function gradeClass(grade) {
-      const safe = String(grade || "NA").replace(/[^A-Za-z0-9/-]/g, "");
-      if (safe === "NA" || safe === "N/A") return "grade-NA";
-      return `grade-${safe}`;
+      const letter = String(grade || "NA").replace(/[^A-Za-z0-9/-]/g, "").toUpperCase();
+      if (letter === "NA" || letter === "N/A") return "grade-NA";
+      const first = letter.charAt(0);
+      if ("ABCDEF".includes(first)) return `grade-${first}`;
+      return "grade-NA";
     }
 
-    function renderGradeBadge(grade) {
-      const label = String(grade || "—");
-      return `<span class="grade-badge ${gradeClass(label)}" aria-label="Grade ${label}">${label}</span>`;
+    function typingHtml() {
+      return '<span class="typing"><span></span><span></span><span></span></span>';
     }
 
-    function freshnessLabel(meta) {
-      if (!meta) return "Fresh";
-      const age = meta.age_seconds;
-      if (age == null) return "Fresh";
-      if (meta.stale) {
-        const hours = Math.max(1, Math.round(age / 3600));
-        return `Stale ${hours}h`;
+    function renderMarkdownLite(text) {
+      const escaped = escapeHtml(text);
+      const withBreaks = escaped.replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>");
+      const withBold = withBreaks.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      return `<p>${withBold}</p>`;
+    }
+
+    function appendBubble(role, html) {
+      const bubble = document.createElement("div");
+      bubble.className = `hud-bubble ${role}`;
+      bubble.innerHTML = html;
+      threadEl.appendChild(bubble);
+      threadEl.scrollTop = threadEl.scrollHeight;
+      return bubble;
+    }
+
+    function setAskBusy(active) {
+      askBusy = active;
+      sendBtn.disabled = active || !inputEl.value.trim();
+      inputEl.disabled = active;
+    }
+
+    function processSsePart(part, handlers) {
+      const lines = part.split("\n");
+      let event = "message";
+      let data = "";
+      for (const line of lines) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        if (line.startsWith("data:")) data += line.slice(5).trim();
       }
-      if (age < 60) return "Fresh";
-      const mins = Math.round(age / 60);
-      if (mins < 60) return `${mins}m ago`;
-      const hours = Math.floor(mins / 60);
-      return `${hours}h ago`;
+      if (!data) return;
+      let payload = {};
+      try { payload = JSON.parse(data); } catch { return; }
+      handlers.onEvent(event, payload);
     }
 
-    function applyHourly(el, hourly) {
-      el.textContent = hourly.text;
-      el.className = `hud-hourly ${hourly.cls}`.trim();
+    function drainSseBuffer(buffer, handlers) {
+      const parts = buffer.split("\n\n");
+      const remainder = parts.pop() || "";
+      for (const part of parts) {
+        if (part.trim()) processSsePart(part, handlers);
+      }
+      return remainder;
+    }
+
+    function waitFrames(n = 2) {
+      return new Promise((resolve) => {
+        let left = n;
+        const tick = () => {
+          left -= 1;
+          if (left <= 0) resolve();
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    }
+
+    async function askStream(question) {
+      if (askAbort) askAbort.abort();
+      const controller = new AbortController();
+      askAbort = controller;
+      appendBubble("user", escapeHtml(question));
+      const assistant = appendBubble("assistant", typingHtml());
+      let answer = "";
+      let streamFinished = false;
+      setAskBusy(true);
+
+      const finishStream = () => {
+        if (streamFinished) return;
+        streamFinished = true;
+        if (askAbort === controller) askAbort = null;
+        setAskBusy(false);
+        threadEl.scrollTop = threadEl.scrollHeight;
+      };
+
+      const handlers = {
+        onEvent(event, payload) {
+          if (event === "status") {
+            assistant.innerHTML = typingHtml();
+          }
+          if (event === "token") {
+            answer += payload.text || "";
+            assistant.innerHTML = renderMarkdownLite(answer);
+            threadEl.scrollTop = threadEl.scrollHeight;
+          }
+          if (event === "error") {
+            assistant.innerHTML = `<span class="muted">${escapeHtml(payload.error || "Ask failed")}</span>`;
+            finishStream();
+          }
+          if (event === "done") {
+            if (!answer.trim()) {
+              assistant.innerHTML = `<span class="muted">No answer returned. Check Settings for your API key.</span>`;
+            }
+            finishStream();
+          }
+        },
+      };
+
+      const timer = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
+
+      try {
+        const response = await fetch("/api/ask/stream", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CitiesAI-Token": sessionToken(),
+          },
+          body: JSON.stringify({ question, use_llm: true, agentic: true }),
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          let message = "Ask failed";
+          try {
+            const errBody = await response.json();
+            message = errBody.error || message;
+          } catch { /* ignore */ }
+          throw new Error(message);
+        }
+        if (!response.body?.getReader) {
+          drainSseBuffer(await response.text(), handlers);
+        } else {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          while (!streamFinished) {
+            const { done, value } = await reader.read();
+            if (value) {
+              buffer += decoder.decode(value, { stream: true });
+              buffer = drainSseBuffer(buffer, handlers);
+            }
+            if (done || streamFinished) break;
+          }
+        }
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          assistant.innerHTML = `<span class="muted">${escapeHtml(String(err.message || err))}</span>`;
+        }
+      } finally {
+        clearTimeout(timer);
+        finishStream();
+      }
+    }
+
+    let compactSizedOnce = false;
+
+    function measureCompactWidth() {
+      const compact = document.getElementById("hud-compact");
+      if (!compact) return lastCompactWidth;
+      // Temporarily ensure compact is measurable.
+      const wasAsk = shell.classList.contains("mode-ask");
+      if (wasAsk) {
+        return lastCompactWidth;
+      }
+      const rect = compact.getBoundingClientRect();
+      const width = Math.max(220, Math.ceil(rect.width) || lastCompactWidth);
+      lastCompactWidth = width;
+      return width;
+    }
+
+    async function collapseToCompact() {
+      if (askAbort) {
+        askAbort.abort();
+        askAbort = null;
+      }
+      uiMode = "compact";
+      compactSizedOnce = false;
+      shell.classList.remove("mode-ask");
+      shell.classList.add("mode-compact");
+      threadEl.innerHTML = "";
+      inputEl.value = "";
+      setAskBusy(false);
+      updatePriorityButton(lastPriority);
+      await waitFrames(2);
+      const width = measureCompactWidth();
+      if (isOverlay && window.pywebview?.api?.collapse_to_compact) {
+        try {
+          await window.pywebview.api.collapse_to_compact(width);
+          compactSizedOnce = true;
+        } catch { /* ignore */ }
+      } else if (isOverlay && window.pywebview?.api?.set_hud_state) {
+        try {
+          await window.pywebview.api.set_hud_state("compact", width, COMPACT_HEIGHT);
+          compactSizedOnce = true;
+        } catch { /* ignore */ }
+      }
+    }
+
+    async function expandAskPanel(priority) {
+      if (!priority?.ask_prompt && !priority?.title) return;
+      if (uiMode === "ask") return;
+      lastPriority = priority;
+
+      // Grow native window first; only then reveal Ask UI.
+      if (isOverlay) {
+        let sized = null;
+        try {
+          if (window.pywebview?.api?.expand_to_ask) {
+            sized = await window.pywebview.api.expand_to_ask();
+          } else if (window.pywebview?.api?.set_hud_state) {
+            sized = await window.pywebview.api.set_hud_state("ask", 440, 400);
+          }
+        } catch (err) {
+          console.error(err);
+          return;
+        }
+        if (!sized?.ok || (sized.height != null && sized.height < 300)) {
+          console.error("Co-Mayor Ask resize failed", sized);
+          return;
+        }
+      }
+
+      uiMode = "ask";
+      askTitleEl.textContent = priority.title || "City issue";
+      askTitleEl.className = `hud-ask-title severity-${priority.severity || "warn"}`;
+      threadEl.innerHTML = "";
+      shell.classList.remove("mode-compact");
+      shell.classList.add("mode-ask");
+      await waitFrames(2);
+
+      const prompt = priority.ask_prompt || `What should I do about: ${priority.title}?`;
+      await askStream(prompt);
+      setTimeout(() => inputEl.focus(), 80);
+    }
+
+    function updatePriorityButton(priority) {
+      const textEl = document.getElementById("hud-priority-text");
+      if (!priority?.title) {
+        priorityBtn.disabled = true;
+        priorityBtn.className = "hud-priority";
+        textEl.textContent = lastHudOk ? "All clear" : "No export";
+        return;
+      }
+      priorityBtn.disabled = uiMode === "ask";
+      priorityBtn.className = `hud-priority severity-${priority.severity || "warn"}`;
+      textEl.textContent = priority.title;
     }
 
     async function refresh() {
       try {
         const res = await fetch("/api/hud");
         const data = await res.json();
-        if (!data.ok) return;
-        const m = data.metrics || {};
-        const meta = data.meta || {};
-        document.getElementById("hud-city").textContent = m.city_name || "Your city";
-        document.getElementById("hud-treasury").textContent =
-          m.treasury == null ? "—" : `¢${fmtCompact(m.treasury)}`;
-        document.getElementById("hud-pop").textContent = fmtCompact(m.population);
+        lastHudOk = Boolean(data.ok);
+        shell.classList.toggle("offline", !data.ok);
 
-        applyHourly(
-          document.getElementById("hud-treasury-hr"),
-          fmtHourly(m.treasury_net_per_hour, { currency: true })
-        );
-        applyHourly(
-          document.getElementById("hud-pop-hr"),
-          fmtHourly(m.population_change_per_hour)
-        );
-
-        const grade = data.report_card?.overall_grade;
-        document.getElementById("hud-grade").innerHTML = grade ? renderGradeBadge(grade) : "—";
-
-        const priority = data.top_priority;
-        const alertEl = document.getElementById("hud-alert");
-        if (priority?.title) {
-          alertEl.textContent = priority.title;
-          alertEl.className = `hud-alert severity-${priority.severity || "warn"}`;
-        } else {
-          alertEl.textContent = "";
-          alertEl.className = "hud-alert";
+        if (!data.ok) {
+          updatePriorityButton(null);
+          return;
         }
 
-        const staleDot = document.getElementById("hud-stale-dot");
-        staleDot.classList.toggle("stale", Boolean(meta.stale));
-        staleDot.title = meta.stale ? "Export is stale" : "Export is fresh";
-        document.getElementById("hud-footer").textContent = freshnessLabel(meta);
+        const meta = data.meta || {};
+        const grade = data.report_card?.overall_grade;
+        const gradeEl = document.getElementById("hud-grade");
+        gradeEl.textContent = grade || "—";
+        gradeEl.className = `hud-grade ${gradeClass(grade)}`;
+        gradeEl.setAttribute("aria-label", grade ? `Grade ${grade}` : "Grade unavailable");
+
+        const priority = data.top_priority;
+        if (priority) lastPriority = priority;
+        updatePriorityButton(priority);
+
+        const freshEl = document.getElementById("hud-fresh");
+        freshEl.classList.toggle("stale", Boolean(meta.stale));
+        freshEl.title = meta.stale ? "Export is stale" : "Export is fresh";
+
+        // Do not resize on every poll; that fights Ask expand.
+        if (uiMode === "compact" && !compactSizedOnce) {
+          await ensureCompactSized();
+        }
+      } catch {
+        lastHudOk = false;
+        shell.classList.add("offline");
+      }
+    }
+
+    async function ensureCompactSized() {
+      if (!isOverlay || compactSizedOnce || uiMode !== "compact") return;
+      await waitFrames(2);
+      const width = measureCompactWidth();
+      lastCompactWidth = width;
+      try {
+        if (window.pywebview?.api?.collapse_to_compact) {
+          await window.pywebview.api.collapse_to_compact(width);
+        } else if (window.pywebview?.api?.set_hud_state) {
+          await window.pywebview.api.set_hud_state("compact", width, COMPACT_HEIGHT);
+        }
+        compactSizedOnce = true;
       } catch { /* ignore */ }
     }
-    refresh();
+
+    priorityBtn.addEventListener("click", () => {
+      if (lastPriority?.title) expandAskPanel(lastPriority);
+    });
+
+    document.getElementById("hud-back")?.addEventListener("click", () => {
+      collapseToCompact();
+    });
+
+    document.getElementById("hud-close")?.addEventListener("click", async () => {
+      if (window.pywebview?.api?.close_hud) {
+        try { await window.pywebview.api.close_hud(); } catch { /* ignore */ }
+        return;
+      }
+      window.close();
+    });
+
+    composeForm?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = inputEl.value.trim();
+      if (!q || askBusy) return;
+      inputEl.value = "";
+      askStream(q);
+    });
+
+    inputEl?.addEventListener("input", () => {
+      sendBtn.disabled = askBusy || !inputEl.value.trim();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && uiMode === "ask") {
+        e.preventDefault();
+        collapseToCompact();
+      }
+    });
+
+    function previewBoot() {
+      if (!preview) return;
+      const samplePriority = {
+        title: "Unemployment is rising",
+        severity: "warn",
+        ask_prompt: "Why is unemployment rising in my city and what can I do about it?",
+      };
+      if (preview === "compact" || preview === "priority") {
+        lastPriority = samplePriority;
+        updatePriorityButton(samplePriority);
+        document.getElementById("hud-grade").textContent = "B";
+        document.getElementById("hud-grade").className = "hud-grade grade-B";
+        priorityBtn.disabled = false;
+      }
+      if (preview === "ask") {
+        shell.classList.remove("mode-compact");
+        shell.classList.add("mode-ask");
+        uiMode = "ask";
+        askTitleEl.textContent = samplePriority.title;
+        askTitleEl.className = "hud-ask-title severity-warn";
+        appendBubble("user", escapeHtml(samplePriority.ask_prompt));
+        appendBubble("assistant", renderMarkdownLite(
+          "Your city has **5.3% unemployment**. Focus on zoning more commercial and industrial near residential areas, and ensure workers can reach jobs via transit."
+        ));
+      }
+      if (preview === "offline") {
+        shell.classList.add("offline");
+        updatePriorityButton(null);
+      }
+    }
+
+    refresh().then(() => ensureCompactSized());
     setInterval(refresh, POLL_MS);
+    previewBoot();
   </script>
 </body>
 </html>

@@ -8,11 +8,12 @@
 |---------|----------------|
 | **Dashboard** — live metrics, session digest, report-card strip | No |
 | **Insights** — letter grades, RCI demand, housing & labor, utilities, transit advisor | No |
-| **Issues** — setup checks + city pressures; click a row for **Ask** or **Settings** | No |
-| **Push notifications** — Windows toasts for new/changed issues (Issues tab toggle) | No |
+| **Issues** — setup checks + city pressures; evidence-first advisor inspector | No |
+| **Push notifications** — Windows toasts for new/changed issues (Settings → Notifications; off by default) | No |
+| **Co-Mayor** — in-game signal strip: compact → evidence advisor → follow-up Ask | Optional for Ask |
 | **Auto-updater** — check GitHub Releases from Settings | No |
 | Wiki + encyclopedia search | No |
-| **Ask** — grounded advice about *your* city | Yes (Mistral, free tier works) |
+| **Advisor** — grounded advice about *your* city (Civic / Conversational / Analyst styles) | Yes (Mistral, free tier works) |
 
 ```text
 CS2 (Data Export mod)  →  latest.json  →  CitiesAI dashboard / Ask
@@ -22,13 +23,20 @@ Your Mistral API key   →  optional LLM  →  synthesized reply
 
 Export refreshes about every **5 seconds** while a city is loaded in-game (requires the bundled export mod). When CS2 is closed, the last snapshot stays on disk; the dashboard shows **Stale** after ~15 seconds without a new export — that is normal, not a setup error.
 
-The **Issues** tab lists setup problems and **current city pressures** (water, health, jobs, transit, budget, and more). Click a row to open **Ask** with a tailored prompt (city pressures) or **Settings** (setup issues). Enable **Push notifications** on that tab for Windows toasts when issues change (`citiesai gui --watch` enables the same background alerts).
+The **Issues** view lists setup problems and **current city pressures** (water, health, jobs, transit, budget, and more) in a ranked queue. Selecting a row opens an evidence-first advisor inspector (evidence → likely causes → actions → optional follow-up Ask). Setup issues can jump to **Settings**. Enable **Push notifications** under **Settings → Notifications** for Windows toasts when issues change (`citiesai gui --watch` enables the same background alerts; the preference persists across sessions and defaults to off).
+
+Choose an **advisor style** during onboarding or in **Settings → Advisor style**:
+- **Civic** (default) — concise municipal guidance
+- **Conversational** — warmer, game-native co-mayor voice
+- **Analyst** — more metrics and reasoning depth
+
+Styles change tone and suggestions only — never measurements, severity, or ranking.
 
 ## What you need
 
 | Requirement | Notes |
 |-------------|--------|
-| **Windows 10/11** | Desktop app (WebView2; usually preinstalled on Win 11) — current release **0.7.2** |
+| **Windows 10/11** | Desktop app (WebView2; usually preinstalled on Win 11) - current release **0.8.0** |
 | **Cities: Skylines II** | Steam or Xbox PC (Game Pass) |
 | **CS2 Data Export mod** | Bundled in the Windows installer |
 | **Mistral API key** | Optional; free Experiment tier is enough for testing |
@@ -37,16 +45,17 @@ The **Issues** tab lists setup problems and **current city pressures** (water, h
 
 ## Install (Windows — recommended)
 
-See [CHANGELOG.md](CHANGELOG.md) for 0.7.2 release notes.
+See [CHANGELOG.md](CHANGELOG.md) for 0.8.0 release notes.
 
-1. Download **`CitiesAI-Setup-0.7.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+1. Download **`CitiesAI-Setup-0.8.0.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
 2. Run the installer (per-user, no admin). SmartScreen may warn on unsigned builds — use **More info → Run anyway** if you trust the source.
 3. Launch **CitiesAI** from the Start menu.
 4. Follow the onboarding wizard:
-   - **Detect paths** — finds your CS2 install and `Locale.cok`
-   - **Install mod** — copies CS2 Data Export (close CS2 first if install fails)
+   - **Welcome** — pick Civic / Conversational / Analyst advisor style
+   - **Detect / install** — finds your CS2 install and installs CS2 Data Export (close CS2 first if install fails)
    - **Load a city** in-game with the mod enabled; wait ~1 minute for the first export
    - **API key** — optional; skip if you only want the dashboard for now
+   Escape dismisses onboarding for the session; Skip/Finish marks it complete.
 
 Beta details: [docs/BETA.md](docs/BETA.md) · Problems: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
@@ -79,11 +88,14 @@ Mod from source: [docs/INSTALL-MOD.md](docs/INSTALL-MOD.md)
 
 1. Launch **CitiesAI** (or leave it open).
 2. Play CS2 with **CS2 Data Export** enabled and your city loaded.
-3. Check the **Dashboard** for live metrics, the Fresh/Stale pill, and the session digest banner.
-4. Open **Insights** for report-card grades, RCI demand, housing & labor, utilities, and transit analysis.
-5. Open **Issues** when something looks wrong — click a row to jump into **Ask** or **Settings**.
-6. Open **Ask** and type a question (e.g. *"Why is my budget negative?"*).
-7. Use **Feedback** to report bugs or bad answers.
+3. Check the **Dashboard** for the 12 metric cards, Fresh/Stale pill, and report-card strip.
+4. Keep **Co-Mayor** enabled for an always-on signal strip over the game (grade + top issues). Tap an issue for an evidence-first advisor brief, then Ask follow-up or **Back to game**.
+5. Open **Insights** for report-card, budget, housing, utilities, and transit analysis.
+6. Open **Issues** when something looks wrong — select a row for the advisor inspector, or open **Settings** for setup items.
+7. Open **Advisor** and type a question (e.g. *"Why is my budget negative?"*).
+8. Use **Feedback** to report bugs or bad answers.
+
+Primary navigation is Dashboard, Insights, Issues, and Advisor. Settings, Feedback, and Diagnostics live as icons in the lower-left rail.
 
 Settings → **Updates** checks GitHub for new installers on startup (Windows packaged builds).
 
@@ -166,8 +178,8 @@ Free-tier rate limits apply on Mistral’s side. If Ask fails, check **Settings 
 
 | Command | Purpose |
 |---------|---------|
-| `citiesai gui` | Desktop app: **Dashboard**, **Insights**, **Issues**, **Ask**, **Settings**, **Feedback**. Close (X) minimizes to the system tray; right-click the tray icon to reopen or exit. |
-| `citiesai gui --watch` | GUI + Windows push notifications for city pressures (same as Issues tab toggle) |
+| `citiesai gui` | Desktop app: **Dashboard**, **Insights**, **Issues**, **Advisor**, **Settings**, **Feedback**. Close (X) minimizes to the system tray; right-click the tray icon to reopen or exit. |
+| `citiesai gui --watch` | GUI + Windows push notifications for city pressures (same as Settings → Notifications; preference persists) |
 | `citiesai setup` | Detect game paths and write config |
 | `citiesai doctor` | Verify snapshot, wiki, encyclopedia, API key |
 | `citiesai context` | Compact city brief from `latest.json` |

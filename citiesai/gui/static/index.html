@@ -1,432 +1,425 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-
   <meta charset="utf-8" />
-
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
   <title>CitiesAI</title>
-
   <link rel="icon" href="/static/logo.png" type="image/png" sizes="512x512" />
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
   <link rel="apple-touch-icon" href="/static/logo.png" />
-
   <link rel="stylesheet" href="/static/app.css" />
-
 </head>
-
 <body>
-
+  <a class="skip-link" href="#main-content">Skip to content</a>
   <div id="toast-root" class="toast-root" aria-live="polite"></div>
 
-
-
   <div id="onboarding" class="onboarding" hidden role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
-
     <div class="onboarding-card">
-
-      <div class="onboarding-progress">
-
+      <div class="onboarding-progress" role="progressbar" aria-valuemin="1" aria-valuemax="4" aria-valuenow="1" aria-labelledby="onboarding-title">
         <div id="onboarding-bar" class="onboarding-bar"></div>
-
       </div>
-
       <div id="onboarding-body" class="onboarding-body">
-
-        <h2>Welcome to CitiesAI</h2>
-
-        <p>Your read-only advisor for <strong>Cities: Skylines II</strong>. See live city stats and ask grounded questions. We never touch your save.</p>
-
+        <h2 id="onboarding-title">Welcome to CitiesAI</h2>
+        <p>Your read-only advisor for <strong>Cities: Skylines II</strong>.</p>
       </div>
-
       <div class="onboarding-actions">
-
-        <button type="button" id="onboarding-skip" class="btn ghost">Open dashboard</button>
-
+        <button type="button" id="onboarding-skip" class="btn ghost">Skip setup</button>
         <button type="button" id="onboarding-back" class="btn ghost" hidden>Back</button>
-
         <button type="button" id="onboarding-next" class="btn primary">Continue</button>
-
       </div>
-
     </div>
-
   </div>
 
-
-
-  <div class="app">
-
-    <aside class="sidebar">
-
+  <div class="app" id="app-shell">
+    <aside class="sidebar" aria-label="CitiesAI">
       <div class="brand">
-
-        <img src="/static/logo.png" alt="" class="brand-icon" width="36" height="36" />
-
-        <div>
-
-          <div class="brand-title">CitiesAI</div>
-
-        </div>
-
+        <img src="/static/logo.png" alt="" class="brand-icon" width="32" height="32" />
+        <div class="brand-title">CitiesAI</div>
       </div>
 
       <nav class="nav" aria-label="Main">
-
         <button type="button" class="nav-item active" data-view="dashboard" aria-current="page">Dashboard</button>
-
         <button type="button" class="nav-item" data-view="insights">Insights</button>
-
         <button type="button" class="nav-item" data-view="issues" id="nav-issues">Issues</button>
-
-        <button type="button" class="nav-item" data-view="ask">Ask</button>
-
-        <button type="button" class="nav-item" data-view="settings">Settings</button>
-
-        <button type="button" class="nav-item" data-view="feedback">Feedback</button>
-
+        <button type="button" class="nav-item" data-view="ask">Advisor</button>
       </nav>
 
-      <div class="sidebar-foot">
-
-        <button type="button" id="health-strip" class="health-strip" aria-live="polite">Checking…</button>
-
+      <div class="sidebar-foot sidebar-foot-icons" role="toolbar" aria-label="System">
+        <button type="button" class="nav-icon-btn" data-view="settings" id="nav-settings" title="Settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+        <button type="button" class="nav-icon-btn" data-view="feedback" id="nav-feedback" title="Feedback" aria-label="Feedback">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 5h16v11H8l-4 4V5z"></path>
+            <path d="M8 9h8M8 13h5"></path>
+          </svg>
+        </button>
+        <button type="button" class="nav-icon-btn" id="open-diagnostics" title="Diagnostics" aria-label="Diagnostics">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.7 6.3a4.5 4.5 0 0 1 0 6.4L9 18.4 5.6 15 11.3 9.3a4.5 4.5 0 0 1 6.4 0z"></path>
+            <path d="M5.6 15l-1.8 4.2L8 17.4"></path>
+          </svg>
+        </button>
+        <span id="health-strip" class="sr-only" aria-live="polite">Checking…</span>
+        <span id="update-status-text" class="sr-only" aria-live="polite">Checking…</span>
       </div>
-
     </aside>
 
-
-
-    <main class="main">
-
+    <main class="main" id="main-content">
       <section id="view-dashboard" class="view active">
-
         <header class="view-header">
-
           <div>
-
             <h1 id="hero-title">Your city</h1>
-
             <p id="hero-sub" class="muted">Waiting for snapshot…</p>
             <p id="dashboard-meta" class="muted small"></p>
-
           </div>
-
           <div class="hero-actions">
-
             <span id="freshness-pill" class="pill">...</span>
-
-            <button type="button" id="open-diagnostics" class="btn ghost btn-sm">Diagnostics</button>
-
           </div>
-
         </header>
 
         <div id="report-card-strip" class="report-card-strip" hidden></div>
-
-        <div id="update-banner" class="update-banner" hidden></div>
 
         <header class="metrics-section-header">
           <h2 class="metrics-section-title">City metrics</h2>
           <p class="muted small metrics-section-sub">12 indicators · click a card for trend history</p>
         </header>
-
         <div id="metric-grid" class="metric-grid"></div>
-
       </section>
 
-
-
       <section id="view-insights" class="view" hidden>
-
         <header class="view-header">
-
           <div>
-
             <h1>Insights</h1>
-
-            <p class="muted">Report card, transit advisor, housing &amp; budget analyzers</p>
-
+            <p class="muted">Domain analysis, report card, and civic appendices</p>
           </div>
-
           <div class="hero-actions">
             <button type="button" id="export-report" class="btn secondary btn-sm">Save HTML report</button>
           </div>
-
         </header>
-
         <div id="insights-content" class="insights-grid"></div>
-
       </section>
-
-
 
       <section id="view-issues" class="view" hidden>
-
-        <header class="view-header issues-header">
+        <header class="view-header">
           <div>
             <h1>Issues</h1>
-            <p class="muted">Setup problems and current city pressures</p>
-          </div>
-          <div class="issues-header-actions">
-            <label class="toggle-switch toggle-switch-compact" for="watch-enabled" title="Push notifications when treasury, population, or issues shift">
-              <input type="checkbox" id="watch-enabled" class="toggle-switch-input" role="switch" />
-              <span class="toggle-switch-track" aria-hidden="true"><span class="toggle-switch-thumb"></span></span>
-              <span class="toggle-switch-copy">
-                <span class="toggle-switch-title">Push Notifications</span>
-              </span>
-            </label>
+            <p class="muted">Priority queue and evidence-first advisor</p>
           </div>
         </header>
-
-        <div id="issues-list" class="issues-list"></div>
-
-        <div id="issues-resolved" class="issues-panel issues-resolved" hidden>
-          <header class="issues-panel-head">
-            <div class="issues-panel-head-main">
-              <h2 class="issues-panel-title">Recently resolved</h2>
+        <div class="issues-workspace">
+          <div id="issues-list" class="issues-list"></div>
+          <aside id="issue-inspector" class="side-inspector issue-inspector" aria-label="Issue advisor">
+            <div id="issue-inspector-empty" class="inspector-empty">
+              <p class="inspector-empty-title">Select an issue</p>
+              <p class="muted small">Evidence, likely causes, and actions appear here.</p>
             </div>
-          </header>
-          <ul id="issues-resolved-list" class="issue-feed"></ul>
+            <div id="issue-inspector-body" hidden>
+              <header class="side-inspector-head">
+                <div>
+                  <p id="issue-inspector-severity" class="severity-label">Warning</p>
+                  <h2 id="issue-inspector-title">Issue</h2>
+                </div>
+              </header>
+              <p id="issue-inspector-detail" class="muted"></p>
+              <section class="inspector-block">
+                <h3>Measured evidence</h3>
+                <ul id="issue-inspector-evidence" class="inspector-list"></ul>
+              </section>
+              <section class="inspector-block">
+                <h3>Likely causes</h3>
+                <ul id="issue-inspector-causes" class="inspector-list"></ul>
+              </section>
+              <section class="inspector-block">
+                <h3>Recommended actions</h3>
+                <ol id="issue-inspector-actions" class="inspector-list numbered"></ol>
+              </section>
+              <div class="inspector-actions">
+                <button type="button" id="issue-open-settings" class="btn secondary btn-sm" hidden>Open Settings</button>
+              </div>
+              <section class="inspector-block inspector-ask">
+                <h3>Advisor follow-up</h3>
+                <form id="issue-ask-form" class="inspector-ask-form">
+                  <label class="sr-only" for="issue-ask-input">Follow-up question</label>
+                  <div class="inspector-ask-composer">
+                    <div class="composer">
+                      <textarea id="issue-ask-input" rows="2" placeholder="Ask the Advisor about this issue…"></textarea>
+                    </div>
+                    <button type="submit" class="btn primary btn-sm" id="issue-ask-submit">Send</button>
+                  </div>
+                </form>
+                <div id="issue-ask-log" class="inspector-ask-log" role="log" aria-live="polite"></div>
+              </section>
+            </div>
+          </aside>
         </div>
-
       </section>
-
-
 
       <section id="view-ask" class="view" hidden>
-
-        <div class="ask-shell">
-          <header class="view-header ask-header">
-            <div>
-              <h1>Ask CitiesAI</h1>
-              <p class="muted">Grounded in your city numbers + wiki knowledge</p>
-            </div>
-            <button type="button" id="clear-chat" class="btn ghost">Clear chat</button>
-          </header>
-
-          <div class="ask-scroll">
-            <div id="ask-welcome" class="ask-welcome">
-              <p class="ask-welcome-title">Ask about your city</p>
-              <p class="ask-welcome-lead">Pick a suggestion below or type your own question.</p>
-            </div>
-
-            <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
-          </div>
-
-          <form id="ask-form" class="ask-dock" aria-busy="false">
-            <div id="suggestions" class="suggestions"></div>
-            <div class="ask-composer-row">
-              <div class="composer">
-                <label class="sr-only" for="question">Your question</label>
-                <textarea id="question" rows="1" placeholder="Ask about traffic, budget, housing…" aria-describedby="ask-helper"></textarea>
+        <div class="ask-workspace">
+          <div class="ask-shell">
+            <header class="view-header ask-header">
+              <div>
+                <h1>Advisor</h1>
+                <p class="muted">Grounded in your city numbers + wiki knowledge</p>
               </div>
-              <button type="submit" class="btn primary ask-send" id="ask-submit" aria-label="Send question">Send</button>
+              <button type="button" id="clear-chat" class="btn ghost">Clear chat</button>
+            </header>
+            <div class="ask-scroll">
+              <div id="ask-welcome" class="ask-welcome">
+                <p class="ask-welcome-title">Ask the Advisor about your city</p>
+                <p class="ask-welcome-lead">Pick a suggestion or type your own question.</p>
+              </div>
+              <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-relevant="additions"></div>
             </div>
-            <p id="ask-helper" class="ask-helper"></p>
-          </form>
+            <form id="ask-form" class="ask-dock" aria-busy="false">
+              <div id="suggestions" class="suggestions"></div>
+              <div class="ask-composer-row">
+                <div class="composer">
+                  <label class="sr-only" for="question">Your question</label>
+                  <textarea id="question" rows="1" placeholder="Ask about traffic, budget, housing…" aria-describedby="ask-helper"></textarea>
+                </div>
+                <button type="submit" class="btn primary ask-send" id="ask-submit" aria-label="Send question">Send</button>
+              </div>
+              <p id="ask-helper" class="ask-helper"></p>
+            </form>
+          </div>
+          <aside id="ask-context-rail" class="ask-context-rail" aria-label="Live city context">
+            <header class="section-rule">
+              <h2>Live context</h2>
+            </header>
+            <div id="ask-context-body" class="ask-context-body">
+              <p class="muted small">Waiting for city data…</p>
+            </div>
+          </aside>
         </div>
-
       </section>
 
-
-
       <section id="view-settings" class="view" hidden>
-
         <header class="view-header">
-
           <div>
-
             <h1>Settings</h1>
-
-            <p class="muted">Paths, mod, and optional AI key</p>
-
+            <p class="muted">Paths, advisor style, notifications, and updates</p>
           </div>
-
         </header>
-
-        <div class="settings-grid">
-
-          <article class="card settings-paths">
-            <div class="card-header">
-              <h2>Game paths</h2>
-              <p class="muted small">Detected automatically from Steam or Game Pass installs.</p>
-            </div>
-            <form id="settings-form" class="form-stack">
-              <label class="field"><span class="field-label">Discovery</span><input id="setup-source" class="path-input control" readonly /></label>
-              <label class="field"><span class="field-label">Game folder</span><input id="setup-game" class="path-input control" /></label>
-              <label class="field"><span class="field-label">Locale.cok</span><input id="setup-locale" class="path-input control" /></label>
-              <label class="field"><span class="field-label">Snapshot path</span><input id="setup-export" class="path-input control" /></label>
-            </form>
-
-            <div class="card-actions">
-
-              <button type="button" id="redetect-paths" class="btn secondary">Re-detect</button>
-
-              <button type="button" id="save-setup" class="btn primary">Save paths</button>
-
-            </div>
-
-          </article>
-
-          <article class="card settings-ai">
-            <div class="card-header settings-ai-header">
-              <div>
-                <h2>AI answers</h2>
-                <p class="muted small">Optional. Free tier at <a href="https://console.mistral.ai" target="_blank" rel="noopener">console.mistral.ai</a>. Key stays on your PC.</p>
+        <div class="settings-workspace">
+          <nav class="settings-index" aria-label="Settings sections">
+            <button type="button" class="settings-index-item active" data-settings-section="paths">Game &amp; data</button>
+            <button type="button" class="settings-index-item" data-settings-section="ai">API Settings</button>
+            <button type="button" class="settings-index-item" data-settings-section="style">Advisor style</button>
+            <button type="button" class="settings-index-item" data-settings-section="notifications">Notifications</button>
+            <button type="button" class="settings-index-item" data-settings-section="comayor">Co-Mayor</button>
+            <button type="button" class="settings-index-item" data-settings-section="updates">Updates</button>
+            <button type="button" class="settings-index-item" data-settings-section="mod">Data export mod</button>
+            <button type="button" class="settings-index-item" data-settings-section="advanced">Advanced</button>
+          </nav>
+          <div class="settings-detail">
+            <section id="settings-section-paths" class="settings-section" data-settings-section="paths">
+              <header class="section-rule">
+                <h2>Game &amp; data</h2>
+                <p class="muted small">Detected automatically from Steam or Game Pass installs.</p>
+              </header>
+              <form id="settings-form" class="form-stack">
+                <label class="field"><span class="field-label">Discovery</span><input id="setup-source" class="path-input control" readonly /></label>
+                <label class="field"><span class="field-label">Game folder</span><input id="setup-game" class="path-input control" /></label>
+                <label class="field"><span class="field-label">Locale.cok</span><input id="setup-locale" class="path-input control" /></label>
+                <label class="field"><span class="field-label">Snapshot path</span><input id="setup-export" class="path-input control" /></label>
+              </form>
+              <div class="card-actions">
+                <button type="button" id="redetect-paths" class="btn secondary">Re-detect</button>
+                <button type="button" id="save-setup" class="btn primary">Save paths</button>
               </div>
-              <span id="key-status" class="key-status-pill muted">No API key saved</span>
-            </div>
-            <div class="settings-ai-body">
-              <div class="settings-ai-row settings-ai-row-2">
-                <label class="field">
-                  <span class="field-label">Provider</span>
-                  <select id="setup-provider" class="control select-control">
-                    <option value="mistral">Mistral Cloud</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="local">Local (Ollama / LM Studio)</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span class="field-label">Model</span>
-                  <input id="setup-model" class="control" placeholder="mistral-medium-latest" />
-                </label>
-              </div>
-              <div class="settings-ai-panel">
-                <label class="checkbox">
-                  <input id="setup-agentic" type="checkbox" checked />
-                  Deep research (tool calling)
-                </label>
-                <p class="muted small settings-ai-hint">When off, Ask uses one API call with pre-fetched sources — faster on free tiers.</p>
-              </div>
-              <div class="settings-ai-panel settings-ai-key-block">
-                <span class="field-label">API key</span>
-                <div id="api-key-saved" class="api-key-saved" hidden>
-                  <p id="api-key-saved-title" class="api-key-saved-title">Key saved on this PC</p>
-                  <p id="api-key-saved-suffix" class="api-key-saved-suffix muted small" hidden></p>
+            </section>
+
+            <section id="settings-section-ai" class="settings-section" data-settings-section="ai" hidden>
+              <header class="section-rule settings-ai-header">
+                <div>
+                  <h2>API Settings</h2>
+                  <p class="muted small">Optional. Free tier at <a href="https://console.mistral.ai" target="_blank" rel="noopener">console.mistral.ai</a>. Key stays on your PC.</p>
                 </div>
-                <div id="api-key-edit">
+                <span id="key-status" class="key-status-pill muted">No API key saved</span>
+              </header>
+              <div class="settings-ai-body">
+                <div class="settings-ai-row settings-ai-row-2">
                   <label class="field">
-                    <input id="api-key" class="control" type="password" placeholder="Paste API key" autocomplete="off" />
+                    <span class="field-label">Provider</span>
+                    <select id="setup-provider" class="control select-control">
+                      <option value="mistral">Mistral Cloud</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="local">Local (Ollama / LM Studio)</option>
+                    </select>
                   </label>
-                  <p id="key-hint" class="muted small settings-ai-hint">Required for Mistral/OpenAI. Local Ollama can use any placeholder.</p>
+                  <label class="field">
+                    <span class="field-label">Model</span>
+                    <input id="setup-model" class="control" placeholder="mistral-medium-latest" />
+                  </label>
+                </div>
+                <div class="settings-ai-panel">
+                  <label class="checkbox">
+                    <input id="setup-agentic" type="checkbox" checked />
+                    Deep research (tool calling)
+                  </label>
+                  <p class="muted small settings-ai-hint">When off, Ask uses one API call with pre-fetched sources — faster on free tiers.</p>
+                </div>
+                <div class="settings-ai-panel settings-ai-key-block">
+                  <label class="field-label" for="api-key">API key</label>
+                  <div id="api-key-saved" class="api-key-saved" hidden>
+                    <p id="api-key-saved-title" class="api-key-saved-title">Key saved on this PC</p>
+                    <p id="api-key-saved-suffix" class="api-key-saved-suffix muted small" hidden></p>
+                  </div>
+                  <div id="api-key-edit">
+                    <label class="field">
+                      <input id="api-key" class="control" type="password" placeholder="Paste API key" autocomplete="off" />
+                    </label>
+                    <p id="key-hint" class="muted small settings-ai-hint">Required for Mistral/OpenAI. Local Ollama can use any placeholder.</p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div class="card-actions settings-ai-actions">
-              <button type="button" id="test-key" class="btn secondary">Test key</button>
-              <button type="button" id="replace-key" class="btn secondary" hidden>Replace key</button>
-              <button type="button" id="remove-key" class="btn ghost" hidden>Remove key</button>
-              <button type="button" id="cancel-replace-key" class="btn ghost" hidden>Cancel</button>
-              <button type="button" id="save-key" class="btn primary">Save key</button>
-            </div>
-          </article>
-
-          <article class="card settings-updates">
-            <div class="card-header settings-updates-head">
-              <div class="settings-updates-head-copy">
-                <h2>Updates</h2>
-                <p class="muted small">Check GitHub Releases for new CitiesAI installers.</p>
+              <div class="card-actions settings-ai-actions">
+                <button type="button" id="test-key" class="btn secondary">Test key</button>
+                <button type="button" id="replace-key" class="btn secondary" hidden>Replace key</button>
+                <button type="button" id="remove-key" class="btn ghost" hidden>Remove key</button>
+                <button type="button" id="cancel-replace-key" class="btn ghost" hidden>Cancel</button>
+                <button type="button" id="save-key" class="btn primary">Save key</button>
               </div>
-              <span id="update-current-version" class="update-version-pill">…</span>
-            </div>
-            <div class="update-settings-body">
-              <p id="update-status" class="muted small">Checking for updates…</p>
-              <label class="checkbox">
-                <input id="update-check-startup" type="checkbox" checked />
-                Check for updates on startup
-              </label>
-            </div>
-            <div class="card-actions update-actions">
-              <button type="button" id="update-check-now" class="btn secondary">Check for updates</button>
-              <button type="button" id="update-download-install" class="btn primary" hidden>Download &amp; install</button>
-              <a id="update-release-notes" class="btn ghost" href="https://github.com/XharvaK/CitiesAI/releases" target="_blank" rel="noopener">Release notes</a>
-            </div>
-          </article>
+            </section>
 
-          <article class="card settings-mod">
-            <div class="settings-mod-row">
-              <div class="settings-mod-copy">
+            <section id="settings-section-style" class="settings-section" data-settings-section="style" hidden>
+              <header class="section-rule">
+                <h2>Advisor style</h2>
+                <p class="muted small">Changes how Ask and Co-Mayor phrase advice — not your city numbers.</p>
+              </header>
+              <div class="style-picker" role="radiogroup" aria-label="Advisor style">
+                <label class="style-option">
+                  <input type="radio" name="advisor-style" value="civic" id="setup-advisor-civic" checked />
+                  <span class="style-option-card">
+                    <strong>Civic</strong>
+                    <span class="muted small">Calm, direct, concise municipal guidance.</span>
+                  </span>
+                </label>
+                <label class="style-option">
+                  <input type="radio" name="advisor-style" value="conversational" id="setup-advisor-conversational" />
+                  <span class="style-option-card">
+                    <strong>Conversational</strong>
+                    <span class="muted small">Warm, game-native co-mayor voice.</span>
+                  </span>
+                </label>
+                <label class="style-option">
+                  <input type="radio" name="advisor-style" value="analyst" id="setup-advisor-analyst" />
+                  <span class="style-option-card">
+                    <strong>Analyst</strong>
+                    <span class="muted small">Technical, metric-heavy detail.</span>
+                  </span>
+                </label>
+              </div>
+              <div class="card-actions">
+                <button type="button" id="save-advisor-style" class="btn primary">Save style</button>
+              </div>
+            </section>
+
+            <section id="settings-section-notifications" class="settings-section" data-settings-section="notifications" hidden>
+              <header class="section-rule">
+                <h2>Notifications</h2>
+                <p class="muted small">Windows toasts when treasury, population, or issues shift. Off by default; preference persists.</p>
+              </header>
+              <label class="toggle-switch" for="watch-enabled" title="Push notifications when treasury, population, or issues shift">
+                <input type="checkbox" id="watch-enabled" class="toggle-switch-input" role="switch" />
+                <span class="toggle-switch-track" aria-hidden="true"><span class="toggle-switch-thumb"></span></span>
+                <span class="toggle-switch-copy">
+                  <span class="toggle-switch-title">Push Notifications</span>
+                  <span class="muted small">Restore this preference on next launch.</span>
+                </span>
+              </label>
+            </section>
+
+            <section id="settings-section-comayor" class="settings-section" data-settings-section="comayor" hidden>
+              <header class="section-rule">
+                <h2>Co-Mayor</h2>
+                <p class="muted small">Always-on in-game HUD: city grade and top priorities. Enabled by default. Use borderless windowed or borderless fullscreen in CS2.</p>
+              </header>
+              <button type="button" id="toggle-comayor" class="btn secondary">Disable Co-Mayor</button>
+            </section>
+
+            <section id="settings-section-updates" class="settings-section" data-settings-section="updates" hidden>
+              <header class="section-rule">
+                <div class="settings-mod-head">
+                  <h2>Updates</h2>
+                  <span id="update-current-version" class="update-version-pill">…</span>
+                </div>
+                <p id="update-status" class="muted small settings-mod-hint">Checking for updates…</p>
+              </header>
+              <div class="settings-updates-controls">
+                <div class="settings-updates-left">
+                  <label class="toggle-switch toggle-switch-compact settings-updates-toggle" for="update-check-startup">
+                    <input type="checkbox" id="update-check-startup" class="toggle-switch-input" role="switch" checked />
+                    <span class="toggle-switch-track" aria-hidden="true"><span class="toggle-switch-thumb"></span></span>
+                    <span class="toggle-switch-copy">
+                      <span class="toggle-switch-title">Check on startup</span>
+                    </span>
+                  </label>
+                  <button type="button" id="update-download-install" class="btn primary" hidden>Download &amp; install</button>
+                </div>
+                <div class="settings-updates-actions">
+                  <button type="button" id="update-check-now" class="btn secondary">Check now</button>
+                  <a id="update-release-notes" class="settings-updates-notes" href="https://github.com/XharvaK/CitiesAI/releases" target="_blank" rel="noopener">Release notes</a>
+                </div>
+              </div>
+            </section>
+
+            <section id="settings-section-mod" class="settings-section" data-settings-section="mod" hidden>
+              <header class="section-rule">
                 <div class="settings-mod-head">
                   <h2>Data export mod</h2>
                   <span id="mod-status" class="mod-status-pill">Checking…</span>
                 </div>
                 <p class="muted small settings-mod-hint">Writes city snapshots while you play. Close CS2 first if install fails.</p>
-              </div>
-              <button type="button" id="install-mod" class="btn primary settings-mod-action">Install mod</button>
-            </div>
-            <div class="settings-mod-row" style="margin-top: 0.75rem;">
-              <div class="settings-mod-copy">
-                <div class="settings-mod-head">
-                  <h2>Compact HUD</h2>
-                </div>
-                <p class="muted small settings-mod-hint">Always-on-top overlay while you play — treasury, growth, grade, top alert. Stays above the game when opened from the desktop app.</p>
-              </div>
-              <button type="button" id="open-hud" class="btn secondary settings-mod-action" disabled>Coming Soon</button>
-            </div>
-          </article>
+              </header>
+              <button type="button" id="install-mod" class="btn primary">Install mod</button>
+            </section>
 
+            <section id="settings-section-advanced" class="settings-section" data-settings-section="advanced" hidden>
+              <header class="section-rule">
+                <h2>Advanced</h2>
+                <p class="muted small">Diagnostics and technical details for troubleshooting.</p>
+              </header>
+              <p class="muted">Open the diagnostics dossier for export freshness, mod status, and raw briefing text.</p>
+              <div class="card-actions">
+                <button type="button" id="settings-open-diagnostics" class="btn secondary">Open diagnostics</button>
+              </div>
+            </section>
+          </div>
         </div>
-
       </section>
 
-
-
       <section id="view-feedback" class="view" hidden>
-
         <header class="view-header">
-
           <div>
-
             <h1>Feedback</h1>
-
             <p class="muted">Help improve CitiesAI during beta</p>
-
           </div>
-
         </header>
-
         <div class="feedback-layout">
-
-          <aside class="feedback-aside card">
-
+          <aside class="feedback-aside">
             <h2>What to send</h2>
-
             <p class="muted">Report bugs, confusing UI, wrong answers, or feature ideas. We read every submission during beta.</p>
-
             <p class="muted">Feedback is sent to the beta Discord when configured, and always saved locally on your PC.</p>
-
             <p class="muted small">Optional system info includes app version and export freshness only. No city save data.</p>
-
           </aside>
-
-          <form id="feedback-form" class="card feedback-form">
-
+          <form id="feedback-form" class="feedback-form">
             <h2>Send feedback</h2>
-
             <div class="segmented" role="group" aria-label="Category">
-
               <button type="button" class="segment active" data-category="bug">Bug</button>
-
               <button type="button" class="segment" data-category="ux">UX</button>
-
               <button type="button" class="segment" data-category="wrong-answer">Wrong answer</button>
-
               <button type="button" class="segment" data-category="feature">Feature</button>
-
               <button type="button" class="segment" data-category="general">General</button>
-
             </div>
-
             <input type="hidden" id="feedback-category" value="bug" />
-
             <label class="field"><span class="field-label">Message</span><textarea id="feedback-message" class="control" rows="5" required placeholder="Describe what happened or what you expected…"></textarea></label>
-
             <label class="field"><span class="field-label">Contact (optional)</span><input id="feedback-contact" class="control feedback-contact-input" type="text" placeholder="Discord username or email" autocomplete="off" /></label>
-
             <div class="feedback-footer">
               <label class="checkbox">
                 <input type="checkbox" id="feedback-system" checked />
@@ -434,81 +427,42 @@
               </label>
               <button type="submit" class="btn primary">Send feedback</button>
             </div>
-
             <div id="feedback-success" class="feedback-success" hidden role="status" aria-live="polite"></div>
-
           </form>
-
         </div>
-
       </section>
-
     </main>
-
   </div>
-
-
 
   <div id="metric-modal" class="metric-modal" hidden role="dialog" aria-modal="true" aria-labelledby="metric-modal-title">
-
     <div class="metric-modal-backdrop" data-close-metric-modal></div>
-
     <div class="metric-modal-card">
-
       <header class="metric-modal-header">
-
         <h2 id="metric-modal-title">Metric</h2>
-
-        <button type="button" id="metric-modal-close" class="btn ghost metric-modal-close" aria-label="Close">×</button>
-
+        <button type="button" id="metric-modal-close" class="btn ghost metric-modal-close" aria-label="Close metric trend">×</button>
       </header>
-
       <div id="metric-modal-values" class="metric-modal-values"></div>
-
       <p id="metric-modal-desc" class="metric-modal-desc muted small"></p>
-
       <div class="metric-modal-chart-wrap">
-
-        <svg id="metric-modal-chart" class="metric-detail-chart" viewBox="0 0 560 220" aria-hidden="true"></svg>
-
+        <svg id="metric-modal-chart" class="metric-detail-chart" viewBox="0 0 560 220" role="img" aria-labelledby="metric-chart-summary"></svg>
+        <p id="metric-chart-summary" class="sr-only"></p>
       </div>
-
       <p id="metric-modal-meta" class="metric-modal-meta muted small"></p>
-
     </div>
-
   </div>
-
-
 
   <div id="diagnostics-modal" class="metric-modal" hidden role="dialog" aria-modal="true" aria-labelledby="diagnostics-modal-title">
-
     <div class="metric-modal-backdrop" data-close-diagnostics-modal></div>
-
     <div class="metric-modal-card diagnostics-modal-card">
-
       <header class="metric-modal-header">
-
         <h2 id="diagnostics-modal-title">City snapshot diagnostics</h2>
-
         <button type="button" id="diagnostics-modal-close" class="btn ghost metric-modal-close" aria-label="Close">×</button>
-
       </header>
-
       <p class="muted small diagnostics-modal-intro">Snapshot metadata, schema version, and advisor context.</p>
-
       <pre id="brief-technical" class="mono-block diagnostics-modal-body"></pre>
-
     </div>
-
   </div>
 
-
-
   <script src="/static/app.js"></script>
-
 </body>
-
 </html>
-
-

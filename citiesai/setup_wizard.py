@@ -23,6 +23,7 @@ def save_detected_config(
     llm_model: str | None = None,
     llm_provider: str | None = None,
     llm_agentic_enabled: bool | None = None,
+    advisor_style: str | None = None,
 ) -> Path:
     discovered = discover_paths()
     cfg = merge_discovered(load_config(), discovered)
@@ -39,6 +40,10 @@ def save_detected_config(
         cfg.llm_model = llm_model
     if llm_agentic_enabled is not None:
         cfg.llm_agentic_enabled = llm_agentic_enabled
+    if advisor_style is not None:
+        from .config import normalize_advisor_style
+
+        cfg.advisor_style = normalize_advisor_style(advisor_style)
     return cfg.write()
 
 

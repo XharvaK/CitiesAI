@@ -2,6 +2,19 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.8.0] — 2026-07-09
+
+### Highlights
+
+- **Co-Mayor** — in-game HUD with city grade, top-priority rotation, and evidence-first advisor briefs.
+- **Redesign** — glanceable Dashboard, stacked Insights, stable Issues inspector, and Advisor workspace.
+
+### Install
+
+Download **`CitiesAI-Setup-0.8.0.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases). Close CS2 before installing so the bundled export mod can update.
+
+---
+
 ## [0.7.5] — 2026-07-08
 
 ### Fixes

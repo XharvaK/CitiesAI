@@ -25,7 +25,17 @@ from ..briefing import build_city_briefing_card, build_mayors_briefing
 from ..cache import load_config_cached, load_export_cached
 from ..city_issues import detect_city_issues
 from ..city_name import resolve_city_display_name
-from ..config import config_dir, config_path, load_config, merge_discovered, set_onboarding_complete
+from ..config import (
+    config_dir,
+    config_path,
+    load_config,
+    merge_discovered,
+    normalize_advisor_style,
+    set_advisor_style,
+    set_comayor_enabled,
+    set_onboarding_complete,
+    set_watch_enabled,
+)
 from ..constants import HISTORY_MAX_POINTS
 from ..conversation import get_conversation
 from ..dashboard import extract_headline_metrics
@@ -35,6 +45,7 @@ from ..feedback import submit_feedback
 from ..fix_first import build_fix_first_playbook
 from ..forecasts import build_forecasts
 from ..historian import get_historian
+from ..issue_advisor import enrich_issue_advisor, enrich_issues, rank_issues_for_queue
 from ..issues import blocking_issue_count, collect_issues
 from ..llm import (
     LLM_PRESETS,
@@ -104,6 +115,8 @@ def api_hud() -> dict[str, Any]:
     top_priority = fix_first[0] if fix_first else None
     age_seconds = meta.age_seconds if meta.age_seconds is not None else 0
     stale = age_seconds > 3600
+    enriched_fix_first = enrich_issues(fix_first)
+    enriched_top = enrich_issue_advisor(top_priority) if top_priority else None
     return {
         "ok": True,
         "meta": {
@@ -122,7 +135,9 @@ def api_hud() -> dict[str, Any]:
             "overall_grade": report_card.get("overall_grade"),
             "overall_score": report_card.get("overall_score"),
         },
-        "top_priority": top_priority,
+        "top_priority": enriched_top,
+        "fix_first": enriched_fix_first,
+        "advisor_style": load_config().advisor_style,
     }
 
 
@@ -246,10 +261,11 @@ def api_issues() -> dict[str, Any]:
             )
             issues = historian.enrich_issues_with_lifecycle(issues, city_name=city_name)
             resolved_history = get_historian().get_resolved_history(city_name)
+    ranked = rank_issues_for_queue(enrich_issues(issues))
     return {
         "ok": True,
-        "issues": issues,
-        "count": len(issues),
+        "issues": ranked,
+        "count": len(ranked),
         "blocking_count": report["blocking_count"],
         "resolved_history": resolved_history,
     }
@@ -260,10 +276,16 @@ def api_suggestions() -> dict[str, Any]:
     issues = status["issues"]
     metrics = _metrics_for_status()
     llm = status.get("llm") or {}
+    cfg = load_config()
     return {
         "ok": True,
-        "suggestions": build_ask_suggestions(issues, metrics),
+        "suggestions": build_ask_suggestions(
+            issues,
+            metrics,
+            advisor_style=cfg.advisor_style,
+        ),
         "llm_configured": bool(llm.get("configured")),
+        "advisor_style": cfg.advisor_style,
     }
 
 
@@ -323,11 +345,13 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         history=hist,
         issues=issues,
     )
-    fix_first = build_fix_first_playbook(
-        issues=issues,
-        briefing=None,
-        report_card=report_card,
-        forecasts=forecasts,
+    fix_first = enrich_issues(
+        build_fix_first_playbook(
+            issues=issues,
+            briefing=None,
+            report_card=report_card,
+            forecasts=forecasts,
+        )
     )
     city_briefing_card = build_city_briefing_card(
         digest=digest,
@@ -349,7 +373,8 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         "city_briefing_card": city_briefing_card,
         "fix_first": fix_first,
         "grade_history": historian.get_grade_history(city_name, limit=limit),
-        "issues": issues,
+        "issues": enrich_issues(rank_issues_for_queue(issues)),
+        "advisor_style": cfg.advisor_style,
     }
 
 
@@ -508,6 +533,9 @@ def api_setup_preview() -> dict[str, Any]:
         "llm_max_tool_rounds": cfg.llm_max_tool_rounds,
         "config_exists": config_path().is_file(),
         "onboarding_complete": cfg.onboarding_complete,
+        "comayor_enabled": cfg.comayor_enabled,
+        "advisor_style": normalize_advisor_style(cfg.advisor_style),
+        "watch_enabled": bool(cfg.watch_enabled),
         "mod_installed": mod_installed(),
     }
 
@@ -522,16 +550,21 @@ def api_setup_save(body: dict[str, Any] | None = None) -> dict[str, Any]:
     model = body.get("llm_model")
     provider = body.get("llm_provider")
     agentic = body.get("llm_agentic_enabled")
+    advisor_style = body.get("advisor_style")
     written = save_detected_config(
         path_overrides=overrides or None,
         llm_model=str(model) if model else None,
         llm_provider=str(provider) if provider else None,
         llm_agentic_enabled=bool(agentic) if agentic is not None else None,
+        advisor_style=str(advisor_style) if advisor_style is not None else None,
     )
     return {"ok": True, "config_path": str(written)}
 
 
-def api_onboarding_complete(_body: dict[str, Any] | None = None) -> dict[str, Any]:
+def api_onboarding_complete(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = body or {}
+    if body.get("advisor_style") is not None:
+        set_advisor_style(str(body.get("advisor_style")))
     path = set_onboarding_complete(complete=True)
     return {"ok": True, "config_path": str(path)}
 
@@ -642,18 +675,24 @@ def api_insights() -> dict[str, Any]:
 
 
 def api_watch_status() -> dict[str, Any]:
+    cfg = load_config()
     service = get_watch_service()
-    return {"ok": True, "enabled": service.is_running()}
+    return {
+        "ok": True,
+        "enabled": service.is_running(),
+        "watch_enabled": bool(cfg.watch_enabled),
+    }
 
 
 def api_watch_toggle(body: dict[str, Any]) -> dict[str, Any]:
     enabled = bool(body.get("enabled", True))
+    path = set_watch_enabled(enabled=enabled)
     service = get_watch_service()
     if enabled:
         service.start()
     else:
         service.stop()
-    return {"ok": True, "enabled": enabled}
+    return {"ok": True, "enabled": enabled, "config_path": str(path)}
 
 
 def api_clear_chat(_body: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -770,16 +809,75 @@ def api_update_install(body: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"ok": True, "path": str(installer_path), "quitting": True}
 
 
-_focus_handler: Callable[[], None] | None = None
+_FOCUS_VIEWS = frozenset({"dashboard", "insights", "issues", "ask", "settings", "feedback"})
+_focus_handler: Callable[..., None] | None = None
+_comayor_open: Callable[[], dict[str, Any]] | None = None
+_comayor_close: Callable[[], dict[str, Any]] | None = None
 
 
-def register_focus_handler(handler: Callable[[], None]) -> None:
+def register_focus_handler(handler: Callable[..., None]) -> None:
     global _focus_handler
     _focus_handler = handler
 
 
-def api_focus() -> dict[str, Any]:
+def register_comayor_handlers(
+    open_handler: Callable[[], dict[str, Any]],
+    close_handler: Callable[[], dict[str, Any]],
+) -> None:
+    global _comayor_open, _comayor_close
+    _comayor_open = open_handler
+    _comayor_close = close_handler
+
+
+def api_focus(view: str | None = None) -> dict[str, Any]:
     if _focus_handler is None:
         return {"ok": False, "error": "App not ready"}
-    _focus_handler()
-    return {"ok": True, "action": "focus"}
+    requested = (view or "").strip().lower() or None
+    if requested is not None and requested not in _FOCUS_VIEWS:
+        return {"ok": False, "error": f"Unsupported view: {requested}"}
+    handler = _focus_handler
+    if requested is None:
+        handler()
+    else:
+        try:
+            handler(view=requested)
+        except TypeError:
+            # Older handlers (tray / single-instance) take no kwargs.
+            handler()
+    return {"ok": True, "action": "focus", "view": requested}
+
+
+def api_comayor_status() -> dict[str, Any]:
+    cfg = load_config()
+    return {"ok": True, "enabled": bool(cfg.comayor_enabled)}
+
+
+def api_comayor_set(body: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = body or {}
+    if "enabled" not in body:
+        return {"ok": False, "error": "enabled is required"}
+    enabled = bool(body["enabled"])
+    path = set_comayor_enabled(enabled=enabled)
+    action: dict[str, Any] = {"ok": True}
+    if enabled:
+        if _comayor_open is None:
+            return {
+                "ok": True,
+                "enabled": True,
+                "config_path": str(path),
+                "warning": "Co-Mayor will open on next launch",
+            }
+        action = _comayor_open()
+    else:
+        if _comayor_close is not None:
+            action = _comayor_close()
+        else:
+            action = {"ok": True}
+    return {
+        "ok": True,
+        "enabled": enabled,
+        "config_path": str(path),
+        "action": action.get("action"),
+        "error": None if action.get("ok", True) else action.get("error"),
+        "spawn_ok": bool(action.get("ok", True)),
+    }

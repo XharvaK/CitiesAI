@@ -233,18 +233,14 @@ def _status_message(
     update_available: bool,
     warning: str | None = None,
 ) -> str:
+    del current  # Version shown in the Settings pill; keep copy short.
     if latest and not update_available:
-        cmp = compare_versions(current, latest)
-        if cmp >= 0:
-            if cmp == 0:
-                return f"No updates available — you're on the latest release (v{latest})."
-            return f"No updates available — you're on v{current}."
-        return f"You're on v{current}; latest on GitHub is v{latest}."
+        return "No updates available"
     if latest and update_available:
         return f"v{latest} is available on GitHub."
     if warning:
-        return f"Could not verify updates right now. You're on v{current}."
-    return f"You're on v{current}."
+        return "Could not verify updates right now."
+    return "No updates available"
 
 
 def _parse_checked_at(raw: str | None) -> datetime | None:

@@ -53,9 +53,11 @@ def test_city_water_pressure_from_utility_group() -> None:
             "water_pressure": "import_dependent_shortage",
             "water": {
                 "consumption": 1000,
+                "capacity": 1200,
                 "fulfilled_consumption": 800,
                 "import_per_month": 1200,
                 "fulfillment_percent": 80,
+                "unfulfilled_consumption": 200,
             },
         },
     )
@@ -101,6 +103,48 @@ def test_city_water_quality_when_supply_ok_but_health_low() -> None:
     assert any(i["id"] == "city_water_quality" for i in issues)
     assert any(i["id"] == "city_health_low" for i in issues)
     assert any(i["id"] == "city_wellbeing_low" for i in issues)
+
+
+def test_city_sewage_from_low_fulfillment() -> None:
+    snap = _base_snapshot(
+        UtilityPressureSemantics={
+            "status": "ok",
+            "water_pressure": "ok",
+            "sewage_pressure": "ok",
+            "sewage": {
+                "consumption": 800,
+                "capacity": 1000,
+                "fulfilled_consumption": 400,
+                "fulfillment_percent": 50,
+                "unfulfilled_consumption": 400,
+            },
+        },
+    )
+    issues = detect_city_issues(snap)
+    sewage = next(i for i in issues if i["id"] == "city_sewage_pressure")
+    assert sewage["severity"] == "error"
+    assert "50%" in sewage["detail"] or "fulfillment" in sewage["detail"].lower()
+
+
+def test_city_sewage_from_zero_capacity() -> None:
+    snap = _base_snapshot(
+        UtilityPressureSemantics={
+            "status": "ok",
+            "water_pressure": "ok",
+            "sewage_pressure": "ok",
+            "sewage": {
+                "consumption": 800,
+                "capacity": 0,
+                "fulfilled_consumption": 0,
+                "fulfillment_percent": 0,
+                "unfulfilled_consumption": 800,
+            },
+        },
+    )
+    issues = detect_city_issues(snap)
+    sewage = next(i for i in issues if i["id"] == "city_sewage_pressure")
+    assert sewage["severity"] == "error"
+    assert "capacity" in sewage["detail"].lower() or "Sewage" in sewage["title"]
 
 
 def test_collect_issues_includes_city_kind() -> None:

@@ -77,6 +77,34 @@ def test_analyze_utilities_services_water_and_sewage_rows() -> None:
     assert any(f["id"] == "sewage_pressure" for f in report["findings"])
 
 
+def test_analyze_utilities_services_sewage_zero_capacity() -> None:
+    snapshot = {
+        "utilities_services_semantics": {
+            "status": "ok",
+            "electricity_fulfillment_percent": 100.0,
+            "electricity_pressure": "ok",
+            "garbage_accumulation": 100,
+        },
+        "utility_pressure_semantics": {
+            "status": "ok",
+            "water_pressure": "ok",
+            "sewage_pressure": "ok",
+            "water": {"fulfillment_percent": 100.0, "consumption": 500, "capacity": 800},
+            "sewage": {
+                "fulfillment_percent": 0.0,
+                "consumption": 800,
+                "capacity": 0,
+                "unfulfilled_consumption": 800,
+            },
+        },
+    }
+    report = analyze_utilities_services(snapshot)
+    sewage = next(f for f in report["findings"] if f["id"] == "sewage_pressure")
+    assert sewage["severity"] == "error"
+    sewage_row = next(row for row in report["services"] if row["id"] == "sewage")
+    assert sewage_row["severity"] == "error"
+
+
 def test_analyze_utilities_services_city_service_understaffed() -> None:
     snapshot = {
         "utilities_services_semantics": {

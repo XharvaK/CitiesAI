@@ -10,7 +10,6 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
-from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 
@@ -22,6 +21,7 @@ from ..constants import HISTORY_MAX_POINTS
 from ..dashboard import extract_headline_metrics
 from ..env_store import load_env_file
 from ..historian import get_historian
+from ..single_instance import ensure_single_instance
 from ..snapshot import load_snapshot_safe, snapshot_meta
 from ..updater import run_startup_update_check
 from ..version import __version__
@@ -30,6 +30,8 @@ from .api import (
     api_ask_stream,
     api_briefing,
     api_clear_chat,
+    api_comayor_set,
+    api_comayor_status,
     api_dashboard,
     api_export_report,
     api_feedback,
@@ -55,17 +57,18 @@ from .api import (
     api_version,
     api_watch_status,
     api_watch_toggle,
+    register_comayor_handlers,
     register_focus_handler,
 )
-from ..single_instance import ensure_single_instance
 from .auth import TOKEN_HEADER, get_session_token, init_session_token, validate_session_token
+from .hud_process import HudProcessController
+from .overlay import enable_dpi_awareness, is_game_running
 from .tray import SystemTray
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
-HUD_WIDTH = 400
-HUD_HEIGHT = 112
-HUD_TITLE = "CitiesAI HUD"
+CS2_WATCH_INTERVAL_S = 4.0
+CS2_GONE_POLLS_REQUIRED = 2
 
 WindowMode = Literal["native", "browser", "none"]
 
@@ -103,25 +106,26 @@ def _index_html() -> bytes:
 def _hud_html() -> bytes:
     root = _static_root()
     hud = (root / "hud.html").read_text(encoding="utf-8")
-    asset_path = root / "app.css"
-    version = int(asset_path.stat().st_mtime)
-    hud = hud.replace(
-        'href="/static/app.css"',
-        f'href="/static/app.css?v={version}"',
-    )
+    token = get_session_token() or ""
+    inject = f'<meta name="citiesai-token" content="{token}">'
+    if inject not in hud:
+        hud = hud.replace("<head>", f"<head>\n  {inject}", 1)
     return hud.encode("utf-8")
 
 
 class GuiBridge:
-    """Pywebview js_api: native HUD overlay and tray actions."""
+    """Pywebview js_api: Co-Mayor process spawn and tray actions."""
 
     def __init__(self, base_url: str) -> None:
         self._base_url = base_url.rstrip("/")
         self._main_window: webview.Window | None = None
-        self._hud_window: webview.Window | None = None
         self._tray: SystemTray | None = None
         self._exiting = False
-        self._hud_lock = threading.Lock()
+        self._hud = HudProcessController()
+        self._cs2_seen = False
+        self._cs2_gone_polls = 0
+        self._cs2_watch_stop = threading.Event()
+        self._cs2_watch_thread: threading.Thread | None = None
 
     def attach_main_window(self, window: webview.Window) -> None:
         self._main_window = window
@@ -129,22 +133,72 @@ class GuiBridge:
     def attach_tray(self, tray: SystemTray) -> None:
         self._tray = tray
 
-    def show_main(self) -> None:
+    def start_cs2_watch(self) -> None:
+        if self._cs2_watch_thread is not None and self._cs2_watch_thread.is_alive():
+            return
+        self._cs2_watch_stop.clear()
+        self._cs2_watch_thread = threading.Thread(
+            target=self._cs2_watch_loop,
+            name="citiesai-cs2-watch",
+            daemon=True,
+        )
+        self._cs2_watch_thread.start()
+
+    def stop_cs2_watch(self) -> None:
+        self._cs2_watch_stop.set()
+
+    def _cs2_watch_loop(self) -> None:
+        while not self._cs2_watch_stop.wait(CS2_WATCH_INTERVAL_S):
+            if self._exiting:
+                return
+            running = is_game_running()
+            if running:
+                self._cs2_seen = True
+                self._cs2_gone_polls = 0
+                continue
+            if not self._cs2_seen:
+                continue
+            self._cs2_gone_polls += 1
+            if self._cs2_gone_polls >= CS2_GONE_POLLS_REQUIRED:
+                self.quit_app()
+                return
+
+    def show_main(self, view: str | None = None) -> None:
         window = self._main_window
         if window is None:
             return
         window.show()
         window.restore()
-        window.focus()
+        # pywebview exposes `focus` as a bool constructor flag, not a method.
+        bring = getattr(window, "bring_to_front", None)
+        if callable(bring):
+            try:
+                bring()
+            except Exception:
+                pass
+        if not view:
+            return
+
+        def _switch() -> None:
+            try:
+                # switchView is a top-level function in the dashboard SPA.
+                window.evaluate_js(f"switchView({json.dumps(view)})")
+            except Exception:
+                pass
+
+        # evaluate_js can block the HTTP worker; run it off the request path.
+        threading.Thread(target=_switch, name="citiesai-focus-view", daemon=True).start()
 
     def quit_app(self) -> None:
         if self._exiting:
             return
         self._exiting = True
+        self.stop_cs2_watch()
+        # Close HUD before tray teardown so orphans are not left behind.
+        self._hud.close()
         if self._tray is not None:
             self._tray.stop()
             self._tray = None
-        self._close_all_hud_windows()
         if self._main_window is not None:
             try:
                 self._main_window.destroy()
@@ -152,71 +206,19 @@ class GuiBridge:
                 pass
 
     def close_hud(self) -> dict[str, Any]:
-        with self._hud_lock:
-            self._close_all_hud_windows()
-        return {"ok": True}
-
-    def _hud_url(self) -> str:
-        return f"{self._base_url}/hud?overlay=1"
-
-    @staticmethod
-    def _is_hud_window(window: webview.Window) -> bool:
-        return getattr(window, "_title", None) == HUD_TITLE
-
-    def _find_hud_window(self) -> webview.Window | None:
-        if self._hud_window is not None and self._hud_window in webview.windows:
-            return self._hud_window
-        for window in webview.windows:
-            if self._is_hud_window(window):
-                self._hud_window = window
-                return window
-        self._hud_window = None
-        return None
-
-    def _close_all_hud_windows(self) -> None:
-        for window in list(webview.windows):
-            if self._is_hud_window(window):
-                try:
-                    window.destroy()
-                except Exception:
-                    pass
-        self._hud_window = None
-
-    def _attach_closed_handler(self, window: webview.Window) -> None:
-        def _on_closed() -> None:
-            if self._hud_window is window:
-                self._hud_window = None
-
-        window.events.closed += _on_closed
+        return self._hud.close()
 
     def open_hud(self) -> dict[str, Any]:
-        with self._hud_lock:
-            existing = self._find_hud_window()
-            if existing is not None:
-                try:
-                    existing.show()
-                    existing.restore()
-                    existing.focus()
-                    return {"ok": True, "action": "focus"}
-                except Exception:
-                    self._close_all_hud_windows()
+        token = get_session_token() or ""
+        if not token:
+            return {"ok": False, "error": "Session token missing"}
+        return self._hud.open(self._base_url, token)
 
-            self._hud_window = webview.create_window(
-                HUD_TITLE,
-                self._hud_url(),
-                width=HUD_WIDTH,
-                height=HUD_HEIGHT,
-                min_size=(320, HUD_HEIGHT),
-                resizable=True,
-                frameless=True,
-                on_top=True,
-                easy_drag=True,
-                shadow=False,
-                js_api=self,
-            )
-            if self._hud_window is not None:
-                self._attach_closed_handler(self._hud_window)
-            return {"ok": True, "action": "open"}
+    def set_comayor_enabled(self, enabled: bool) -> dict[str, Any]:
+        return api_comayor_set({"enabled": bool(enabled)})
+
+    def get_comayor_enabled(self) -> dict[str, Any]:
+        return api_comayor_status()
 
 
 def _guess_type(name: str) -> str:
@@ -278,20 +280,23 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _send_static(self, name: str) -> None:
-        if ".." in name or name.startswith(("/", "\\")) or "\\" in name:
+        bare_name = name.split("?", 1)[0].replace("\\", "/").lstrip("/")
+        if not bare_name or ".." in bare_name.split("/") or bare_name.startswith("/"):
             self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid path"})
             return
-        bare_name = name.split("?", 1)[0]
-        safe_name = Path(bare_name).name
-        if not safe_name or safe_name != Path(bare_name).name:
+        parts = [part for part in bare_name.split("/") if part]
+        if not parts or any(not part or part in {".", ".."} for part in parts):
             self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid path"})
             return
         try:
-            body = _static_file(safe_name)
-        except FileNotFoundError:
+            path = _static_root()
+            for part in parts:
+                path = path.joinpath(part)
+            body = path.read_bytes()
+        except (FileNotFoundError, IsADirectoryError, OSError, ValueError):
             self._send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
             return
-        self._send_bytes(HTTPStatus.OK, body, _guess_type(name))
+        self._send_bytes(HTTPStatus.OK, body, _guess_type(parts[-1]))
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -318,6 +323,7 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/issues": api_issues,
             "/api/suggestions": api_suggestions,
             "/api/setup": api_setup_preview,
+            "/api/comayor": api_comayor_status,
             "/api/settings/key/test": api_test_key,
             "/api/settings/llm-presets": api_llm_presets,
             "/api/watch": api_watch_status,
@@ -338,6 +344,10 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
                     limit = HISTORY_MAX_POINTS
                 limit = max(10, min(limit, HISTORY_MAX_POINTS))
                 result = api_dashboard(limit=limit)
+            elif route == "/api/focus":
+                qs = parse_qs(parsed.query)
+                view = (qs.get("view", [None])[0] or None)
+                result = api_focus(view=view)
             else:
                 result = handler()
         except Exception as exc:  # noqa: BLE001 - return JSON for GUI clients
@@ -397,6 +407,7 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/update/dismiss": api_update_dismiss,
             "/api/update/download": api_update_download,
             "/api/update/install": api_update_install,
+            "/api/comayor": api_comayor_set,
         }
         handler = post_handlers.get(route)
         if handler is None:
@@ -477,6 +488,7 @@ def _run_native_window(server: CitiesAIHTTPServer, url: str, *, hud: bool = Fals
     )
     bridge.attach_main_window(main_window)
     register_focus_handler(bridge.show_main)
+    register_comayor_handlers(bridge.open_hud, bridge.close_hud)
 
     def on_closing() -> bool:
         if bridge._exiting:
@@ -492,10 +504,19 @@ def _run_native_window(server: CitiesAIHTTPServer, url: str, *, hud: bool = Fals
     )
     bridge.attach_tray(tray)
     tray.start()
+    bridge.start_cs2_watch()
 
-    if hud:
-        bridge.open_hud()
+    should_open_hud = hud or load_config().comayor_enabled
+    if should_open_hud:
+        result = bridge.open_hud()
+        if not result.get("ok"):
+            # One retry after a short delay (Qt/plugin race on cold start).
+            time.sleep(1.0)
+            if not bridge._exiting:
+                bridge.open_hud()
     webview.start()
+    bridge.stop_cs2_watch()
+    bridge._hud.close()
     tray.stop()
     _shutdown_server(server)
     return 0
@@ -510,13 +531,15 @@ def run_gui(
     watch: bool = False,
 ) -> int:
     load_env_file()
-    apply_config_to_env(load_config())
-    if watch:
+    cfg = load_config()
+    apply_config_to_env(cfg)
+    if watch or cfg.watch_enabled:
         get_watch_service().start()
     threading.Thread(target=run_startup_update_check, daemon=True, name="citiesai-update-check").start()
     url = f"http://{host}:{port}/"
     if window == "native" and ensure_single_instance(url) == "focused":
         return 0
+    enable_dpi_awareness()
     try:
         server = CitiesAIHTTPServer((host, port), CitiesAIHandler)
         server.session_token = init_session_token()

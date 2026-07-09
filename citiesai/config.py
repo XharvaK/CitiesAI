@@ -31,6 +31,15 @@ def config_path() -> Path:
 LEGACY_LLM_MODEL = "mistral-small-latest"
 DEFAULT_LLM_MODEL = "mistral-medium-latest"
 DEFAULT_MAX_TOOL_ROUNDS = 8
+DEFAULT_ADVISOR_STYLE = "civic"
+ADVISOR_STYLES = frozenset({"civic", "conversational", "analyst"})
+
+
+def normalize_advisor_style(value: Any) -> str:
+    style = str(value or "").strip().lower()
+    if style in ADVISOR_STYLES:
+        return style
+    return DEFAULT_ADVISOR_STYLE
 
 
 @dataclass
@@ -45,6 +54,9 @@ class CitiesAIConfig:
     llm_max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS
     llm_agentic_enabled: bool = True
     onboarding_complete: bool = False
+    comayor_enabled: bool = True
+    advisor_style: str = DEFAULT_ADVISOR_STYLE
+    watch_enabled: bool = False
     check_updates_on_startup: bool = True
     update_last_check_utc: str | None = None
     update_dismissed_version: str | None = None
@@ -122,6 +134,11 @@ class CitiesAIConfig:
         lines.append("")
         lines.append("[app]")
         lines.append(f"onboarding_complete = {'true' if self.onboarding_complete else 'false'}")
+        lines.append("")
+        lines.append("[ui]")
+        lines.append(f"comayor_enabled = {'true' if self.comayor_enabled else 'false'}")
+        lines.append(f'advisor_style = "{normalize_advisor_style(self.advisor_style)}"')
+        lines.append(f"watch_enabled = {'true' if self.watch_enabled else 'false'}")
         lines.append("")
         lines.append("[updates]")
         lines.append(f"check_on_startup = {'true' if self.check_updates_on_startup else 'false'}")
@@ -203,6 +220,14 @@ def load_config() -> CitiesAIConfig:
     if "onboarding_complete" in app:
         cfg.onboarding_complete = bool(app["onboarding_complete"])
 
+    ui = data.get("ui", {})
+    if "comayor_enabled" in ui:
+        cfg.comayor_enabled = bool(ui["comayor_enabled"])
+    if "advisor_style" in ui:
+        cfg.advisor_style = normalize_advisor_style(ui.get("advisor_style"))
+    if "watch_enabled" in ui:
+        cfg.watch_enabled = bool(ui["watch_enabled"])
+
     if "check_on_startup" in updates:
         cfg.check_updates_on_startup = bool(updates["check_on_startup"])
     if updates.get("last_check_utc"):
@@ -216,6 +241,24 @@ def load_config() -> CitiesAIConfig:
 def set_onboarding_complete(*, complete: bool = True) -> Path:
     cfg = load_config()
     cfg.onboarding_complete = complete
+    return cfg.write()
+
+
+def set_comayor_enabled(*, enabled: bool) -> Path:
+    cfg = load_config()
+    cfg.comayor_enabled = bool(enabled)
+    return cfg.write()
+
+
+def set_advisor_style(style: str) -> Path:
+    cfg = load_config()
+    cfg.advisor_style = normalize_advisor_style(style)
+    return cfg.write()
+
+
+def set_watch_enabled(*, enabled: bool) -> Path:
+    cfg = load_config()
+    cfg.watch_enabled = bool(enabled)
     return cfg.write()
 
 

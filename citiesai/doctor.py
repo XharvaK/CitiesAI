@@ -4,6 +4,7 @@ from .config import CitiesAIConfig, config_path, load_config
 from .constants import STALE_AFTER_SECONDS
 from .dashboard import extract_headline_metrics
 from .issues import blocking_issue_count, collect_issues
+from .mod_install import mod_installed
 from .official_fallbacks import official_stats_degraded
 from .snapshot import SnapshotMeta, load_snapshot_safe, snapshot_meta
 from .status import collect_status_report

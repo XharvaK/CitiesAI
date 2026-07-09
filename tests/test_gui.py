@@ -283,11 +283,79 @@ def test_api_dashboard_corrupt_export(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
 def test_static_index_contains_title() -> None:
     body = _static_file("index.html")
+    css = _static_file("app.css")
+    js = _static_file("app.js")
     assert b"Dashboard" in body
     assert b"Issues" in body
-    assert b"metric-modal" in body
+    assert b"Advisor" in body
+    assert b'id="metric-modal"' in body
+    assert b'role="dialog"' in body
+    assert b"metric-modal-backdrop" in body
     assert b"diagnostics-modal" in body
     assert b"api-key-saved" in body
+    assert b"nav-group" not in body
+    assert b"priority-hero" not in body
+    assert b"metric-ledger" not in body
+    assert b'class="metric-grid"' in body
+    assert b"issue-inspector" in body
+    assert b"inspector-ask-composer" in body
+    assert b"advisor-style" in body
+    assert b"watch-enabled" in body
+    assert b"settings-section-advanced" in body
+    assert b"nav-icon-btn" in body
+    assert b"sidebar-foot-icons" in body
+    assert b'aria-label="Settings"' in body
+    # Cogwheel path (not the old sunburst radial ticks).
+    assert b"M19.4 15a1.65 1.65 0 0 0 .33 1.82" in body
+    assert b"M12 2v2.2M12 19.8V22" not in body
+    assert b"insights-index" not in body
+    assert b"IBM Plex" not in css
+    assert b'"Segoe UI"' in css
+    assert b"side-inspector" in css
+    assert b"var(--mono)" not in css
+    assert b"justify-content: center" in css
+    assert b"metric-inspector-overlay" not in css
+    assert b"metric-signal" in css
+    assert b"report-grade-cluster" in css
+    assert b"grade-badge-lg" in css
+    assert b"metric-signal" in js
+    assert b"report-grade-cluster" in js
+    assert b"bindModalFocusTrap(inspector, closeMetricModal)" in js
+    assert b"API Settings" in body
+    assert b"settings-updates-actions" in body
+    assert b"preserveSelection: preserve" in js
+    assert b"preserveSelection = true" in js
+    # Follow-up composer: one shell border, not a nested textarea border.
+    assert b".inspector-ask-composer #issue-ask-input" in css
+    assert b"border: none" in css
+
+
+def test_api_focus_bare_and_view(monkeypatch: pytest.MonkeyPatch) -> None:
+    from citiesai.gui import api as api_mod
+
+    calls: list[dict[str, str | None]] = []
+
+    def handler(*, view: str | None = None) -> None:
+        calls.append({"view": view})
+
+    api_mod.register_focus_handler(handler)
+    try:
+        bare = api_mod.api_focus()
+        assert bare["ok"] is True
+        assert bare["action"] == "focus"
+        assert bare.get("view") is None
+        assert calls[-1]["view"] is None
+
+        dash = api_mod.api_focus(view="dashboard")
+        assert dash["ok"] is True
+        assert dash["view"] == "dashboard"
+        assert calls[-1]["view"] == "dashboard"
+
+        bad = api_mod.api_focus(view="not-a-view")
+        assert bad["ok"] is False
+        assert "Unsupported" in bad["error"]
+    finally:
+        api_mod.register_focus_handler(lambda: None)
 
 
 def test_api_setup_preview_keys() -> None:

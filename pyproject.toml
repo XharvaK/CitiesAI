@@ -1,6 +1,6 @@
 [project]
 name = "citiesai"
-version = "0.7.5"
+version = "0.8.0"
 description = "Read-only Cities: Skylines II gameplay advisor - city snapshot + wiki knowledge"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,6 +20,7 @@ classifiers = [
 dependencies = [
     "cities2-mcp>=0.1.9,<0.2.0",
     "pillow>=10.0",
+    "PySide6-Essentials>=6.6,<6.10",
     "pystray>=0.19",
     "pywebview>=5.0",
 ]
@@ -32,6 +33,7 @@ Issues = "https://github.com/XharvaK/CitiesAI/issues"
 [project.scripts]
 citiesai = "citiesai.cli:main"
 citiesai-advisor = "citiesai.cli:main"
+citiesai-hud = "citiesai.gui.hud_app:main"
 citiesai-mcp = "citiesai.mcp_server:main"
 
 [build-system]

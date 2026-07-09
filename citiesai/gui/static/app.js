@@ -14,17 +14,20 @@ let lastIssuesFingerprint = "";
 const ONBOARDING_STEPS = [
   {
     title: "Welcome to CitiesAI",
-    html: `<p>Your read-only advisor for <strong>Cities: Skylines II</strong>. See live city stats and ask grounded questions. We never touch your save.</p>`,
+    html: `<p>Your read-only advisor for <strong>Cities: Skylines II</strong>. See live city stats and ask grounded questions. We never touch your save.</p>
+      <p class="muted small">Choose how CitiesAI should talk to you. You can change this later in Settings.</p>
+      <div class="onboarding-style-grid style-picker" role="radiogroup" aria-label="Advisor style">
+        <label class="style-option"><input type="radio" name="onboard-advisor-style" value="civic" checked /><span class="style-option-card"><strong>Civic</strong><span class="muted small">Calm, direct, concise municipal guidance.</span></span></label>
+        <label class="style-option"><input type="radio" name="onboard-advisor-style" value="conversational" /><span class="style-option-card"><strong>Conversational</strong><span class="muted small">Warm, game-native co-mayor voice.</span></span></label>
+        <label class="style-option"><input type="radio" name="onboard-advisor-style" value="analyst" /><span class="style-option-card"><strong>Analyst</strong><span class="muted small">Technical, metric-heavy detail.</span></span></label>
+      </div>`,
   },
   {
-    title: "Detect your game",
-    html: `<p>We'll look for CS2 on Steam or Game Pass and set paths automatically.</p><p id="onboard-detect" class="muted">Detecting…</p>`,
-    onEnter: detectGame,
-  },
-  {
-    title: "Install data export mod",
-    html: `<p>A tiny mod writes a snapshot of your city every ~5 seconds while you play. Close CS2 if install fails.</p><p id="onboard-mod" class="muted"></p>`,
-    onEnter: checkMod,
+    title: "Detect game & install mod",
+    html: `<p>We'll look for CS2 and install the tiny data export mod that writes a snapshot every few seconds.</p>
+      <p id="onboard-detect" class="muted">Detecting…</p>
+      <p id="onboard-mod" class="muted"></p>`,
+    onEnter: async () => { await detectGame(); await checkMod(); },
   },
   {
     title: "Load a city in-game",
@@ -32,13 +35,10 @@ const ONBOARDING_STEPS = [
     onEnter: waitForExport,
   },
   {
-    title: "AI answers (optional)",
-    html: `<p>Stats work without AI. For answers, get a free key at <a href="https://console.mistral.ai" target="_blank" rel="noopener">console.mistral.ai</a> and paste below. Stored only on your PC.</p>
-      <label>API key<input id="onboard-key" type="password" placeholder="Optional" /></label>`,
-  },
-  {
-    title: "You're ready",
-    html: `<p>Dashboard refreshes automatically. Use <strong>Ask</strong> for advice and <strong>Feedback</strong> to report issues during beta.</p>`,
+    title: "Optional AI key",
+    html: `<p>Stats work without AI. For answers, get a free key at <a href="https://console.mistral.ai" target="_blank" rel="noopener">console.mistral.ai</a> and paste below.</p>
+      <label class="field"><span class="field-label">API key</span><input id="onboard-key" class="control" type="password" placeholder="Optional" /></label>
+      <p class="muted small">Continue finishes setup. Escape closes this wizard for now without marking setup complete.</p>`,
   },
 ];
 
@@ -69,6 +69,11 @@ let diagnosticsModalReturnFocus = null;
 let lastActiveCity = null;
 let lastUpdateInfo = null;
 let updateCheckInFlight = false;
+let advisorStyle = "civic";
+let selectedIssueId = null;
+let pendingIssueId = null;
+let issueAskAbort = null;
+let issueAskGeneration = 0;
 
 function $(id) {
   return document.getElementById(id);
@@ -225,7 +230,7 @@ function drawSparkline(svg, values, projected) {
   if (nums.length < 2) return;
   const combined = proj.length ? [...nums, ...proj] : nums;
   const w = 160;
-  const h = 28;
+  const h = 20;
   const min = Math.min(...combined);
   const max = Math.max(...combined);
   const range = max - min || 1;
@@ -235,13 +240,13 @@ function drawSparkline(svg, values, projected) {
     return `${x},${y}`;
   };
   const solidPts = nums.map((v, i) => toPoint(v, i, combined.length));
-  let html = `<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${solidPts.join(" ")}" />`;
+  let html = `<polyline fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" points="${solidPts.join(" ")}" />`;
   if (proj.length) {
     const dashedPts = [
       toPoint(nums[nums.length - 1], nums.length - 1, combined.length),
       ...proj.map((v, i) => toPoint(v, nums.length + i, combined.length)),
     ];
-    html += `<polyline fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.55" points="${dashedPts.join(" ")}" />`;
+    html += `<polyline fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 3" opacity="0.55" points="${dashedPts.join(" ")}" />`;
   }
   svg.innerHTML = html;
 }
@@ -478,8 +483,9 @@ function gradeClass(grade) {
 function renderGradeBadge(grade, options = {}) {
   const label = String(grade || "—");
   const cls = gradeClass(label);
+  const sizeCls = options.size === "lg" ? " grade-badge-lg" : "";
   const aria = options.ariaLabel || `Grade ${label}`;
-  return `<span class="grade-badge ${cls}" aria-label="${escapeAttr(aria)}">${escapeHtml(label)}</span>`;
+  return `<span class="grade-badge${sizeCls} ${cls}" aria-label="${escapeAttr(aria)}">${escapeHtml(label)}</span>`;
 }
 
 const modalTrapCleanups = new WeakMap();
@@ -518,14 +524,11 @@ function bindModalFocusTrap(modalEl, onClose) {
 }
 
 function switchView(name, options = {}) {
-  document.querySelectorAll(".nav-item").forEach((btn) => {
+  document.querySelectorAll(".nav-item[data-view], .nav-icon-btn[data-view]").forEach((btn) => {
     const active = btn.dataset.view === name;
     btn.classList.toggle("active", active);
-    if (active) {
-      btn.setAttribute("aria-current", "page");
-    } else {
-      btn.removeAttribute("aria-current");
-    }
+    if (active) btn.setAttribute("aria-current", "page");
+    else btn.removeAttribute("aria-current");
   });
   document.querySelectorAll(".view").forEach((panel) => {
     const active = panel.id === `view-${name}`;
@@ -536,21 +539,22 @@ function switchView(name, options = {}) {
     renderSuggestions();
     updateAskHelper();
     updateAskWelcome();
-    $("question").focus();
+    renderAskContextRail();
+    $("question")?.focus();
   }
   if (name === "settings") {
-    void loadSettings();
-    if (lastUpdateInfo) {
-      renderUpdateSettings(lastUpdateInfo);
-    }
+    void loadSettings().then(() => {
+      if (options.section) openSettingsSection(options.section);
+      if (lastUpdateInfo) renderUpdateSettings(lastUpdateInfo);
+    });
     void refreshUpdateUi({ force: false });
   }
-  if (name === "insights") {
-    void loadInsights();
-  }
+  if (name === "insights") void loadInsights();
   if (name === "issues") {
-    refreshIssues({ toastOnError: true });
-    void initWatchToggle();
+    if (options.issueId) pendingIssueId = String(options.issueId);
+    // Auto-select the top issue only on first open; polls must preserve selection.
+    const preserve = Boolean(selectedIssueId || pendingIssueId);
+    void refreshIssues({ toastOnError: true, preserveSelection: preserve });
   }
   if (name === "feedback") {
     if (options.category) setFeedbackCategory(options.category);
@@ -562,11 +566,22 @@ function blockingIssueCount(issues) {
   return issues.filter((i) => i.severity === "error" || i.severity === "warn").length;
 }
 
-function applyIssuesData(data) {
-  lastIssues = data.issues || [];
+function applyIssuesData(data, options = {}) {
+  const next = data.issues || [];
+  const fp = issuesFingerprint(next);
+  const changed = fp !== lastIssuesFingerprint;
+  lastIssues = next;
+  lastIssuesFingerprint = fp;
   updateIssuesNavLabel(lastIssues);
   if ($("view-issues").classList.contains("active")) {
-    renderIssues(lastIssues);
+    // Never follow Co-Mayor rotation: keep the user's selection while reading.
+    const preserve =
+      Boolean(options.preserveSelection) ||
+      Boolean(selectedIssueId) ||
+      issueInspectorBusy();
+    if (changed || options.force || !document.querySelector(".issue-item-btn")) {
+      renderIssues(lastIssues, { preserveSelection: preserve });
+    }
   }
   if (lastStatus) {
     renderHealthStrip(lastStatus);
@@ -675,39 +690,63 @@ function updateIssuesNavLabel(issues) {
 
 function renderHealthStrip(status) {
   const el = $("health-strip");
-  el.classList.remove("ok", "warn", "bad", "clickable");
-  el.onclick = null;
-  el.removeAttribute("aria-disabled");
-
+  if (!el) return;
   if (!status) {
-    el.textContent = "Status unavailable";
-    el.classList.add("warn");
+    el.textContent = "Signal unavailable";
     return;
   }
-
   const exportReady = Boolean(status.export && !status.export.corrupt);
   const needsSetup = !status.mod_installed || !exportReady;
-
+  const stale = Boolean(status.export?.stale);
   if (needsSetup) {
-    el.textContent = "Setup needed";
-    el.classList.add("warn", "clickable");
-    el.onclick = () => switchView("settings");
+    el.textContent = "Signal: setup needed";
     return;
   }
-
-  el.textContent = "READY";
-  el.classList.add("ok");
-  el.setAttribute("aria-disabled", "true");
+  if (stale) {
+    el.textContent = "Signal: stale";
+    return;
+  }
+  el.textContent = "Signal: live";
 }
 
 function updateAskHelper() {
   const el = $("ask-helper");
   if (!el) return;
+  const styleNote =
+    advisorStyle === "conversational"
+      ? "Conversational voice"
+      : advisorStyle === "analyst"
+        ? "Analyst voice"
+        : "Civic voice";
   if (llmConfigured) {
-    el.textContent = "Grounded in your city snapshot and Cities Wiki.";
+    el.textContent = `${styleNote}. Grounded in your city snapshot and Cities Wiki.`;
   } else {
-    el.textContent = "Add an API key in Settings for AI answers — stats work without one.";
+    el.textContent = `${styleNote}. Add an API key in Settings for AI answers — stats work without one.`;
   }
+}
+
+function openSettingsSection(section) {
+  const id = String(section || "paths");
+  document.querySelectorAll(".settings-index-item").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.settingsSection === id);
+  });
+  document.querySelectorAll(".settings-section").forEach((panel) => {
+    const active = panel.dataset.settingsSection === id;
+    panel.hidden = !active;
+  });
+  const target = document.getElementById(`settings-section-${id}`);
+  target?.scrollIntoView({ block: "nearest" });
+}
+
+function selectedAdvisorStyleFromForm() {
+  const checked = document.querySelector('input[name="advisor-style"]:checked');
+  return checked?.value || advisorStyle || "civic";
+}
+
+function applyAdvisorStyleToForm(style) {
+  advisorStyle = style || "civic";
+  const input = document.querySelector(`input[name="advisor-style"][value="${advisorStyle}"]`);
+  if (input) input.checked = true;
 }
 
 const METRIC_DEFS = [
@@ -824,56 +863,55 @@ function sparklineSeries(def, metrics, series) {
 function buildMetricCardHtml(def, m, deltas, series, options = {}) {
   const sparklineEmptyLabel = options.sparklineEmptyLabel ?? "Collecting…";
   const val = m[def.key];
-  const delta = deltas[def.key];
+  const formatted = formatMetricValue(val, def);
+  const delta = deltas?.[def.key];
   const formatOpts = { decimals: def.decimals ?? 0 };
-  const roundedDelta =
-    delta == null || Number.isNaN(delta)
-      ? null
-      : formatOpts.decimals > 0
-        ? Number(delta)
-        : Math.round(Number(delta));
-  const deltaCls = metricDeltaClass(roundedDelta, def.invertDelta);
+  const deltaCls = metricDeltaClass(delta, Boolean(def.invertDelta));
   const sparkValues = sparklineSeries(def, m, series);
   const hasSparkline = sparkValues.filter((v) => typeof v === "number" && !Number.isNaN(v)).length >= 2;
   const deltaOpts = { decimals: def.decimals ?? 0, currency: Boolean(def.currency) };
 
-  let hourlyHtml = "";
+  let signalHtml = "";
   if (def.hourlyKey) {
     const hourlyVal = m[def.hourlyKey];
     const hourlyText = formatHourlyRate(hourlyVal, {
       decimals: formatOpts.decimals,
-      currency: Boolean(def.hourlyCurrency),
+      currency: Boolean(def.hourlyCurrency || def.currency),
     });
     if (hourlyText) {
-      hourlyHtml = `<span class="metric-hourly ${hourlyRateClass(hourlyVal)}">${hourlyText}</span>`;
+      signalHtml = `<span class="metric-signal metric-hourly ${hourlyRateClass(hourlyVal)}">${hourlyText}</span>`;
+    }
+  }
+  if (!signalHtml) {
+    const deltaText = formatDelta(delta, deltaOpts);
+    if (deltaText) {
+      signalHtml = `<span class="metric-signal metric-delta ${deltaCls}">${deltaText}</span>`;
     }
   }
 
-  const deltaHtml =
-    def.hourlyKey && hourlyHtml
-      ? ""
-      : `<div class="metric-delta ${deltaCls}">${formatDelta(delta, deltaOpts)}</div>`;
-
-  return `<button type="button" class="metric-card metric-group-${def.group}" data-metric-key="${def.key}" aria-label="View ${def.label} trend">
+  return `<button type="button" class="metric-card metric-group-${escapeAttr(def.group || "city")}" data-metric-key="${escapeAttr(def.key)}" aria-label="${escapeAttr(`View ${def.label} trend, current ${formatted}`)}">
     <div class="metric-card-head">
-      <span class="metric-label">${def.label}</span>
+      <span class="metric-label">${escapeHtml(def.label)}</span>
       <span class="metric-trend-hint" aria-hidden="true">›</span>
     </div>
     <div class="metric-value-row">
-      <span class="metric-value">${formatMetricValue(val, def)}</span>
-      ${hourlyHtml}
+      <span class="metric-value">${escapeHtml(formatted)}</span>
+      ${signalHtml}
     </div>
-    ${deltaHtml}
     <div class="metric-spark-wrap">
-      <svg class="sparkline" viewBox="0 0 160 28" data-key="${def.key}" aria-hidden="true"></svg>
-      ${hasSparkline ? "" : `<span class="sparkline-empty muted small">${sparklineEmptyLabel}</span>`}
+      <svg class="sparkline" viewBox="0 0 160 28" data-key="${escapeAttr(def.key)}" aria-hidden="true"></svg>
+      ${hasSparkline ? "" : `<span class="sparkline-empty muted small">${escapeHtml(sparklineEmptyLabel)}</span>`}
     </div>
   </button>`;
 }
 
 function bindMetricCards() {
-  $("metric-grid").querySelectorAll(".metric-card").forEach((card) => {
-    card.addEventListener("click", () => openMetricModal(card.dataset.metricKey, card));
+  $("metric-grid").querySelectorAll(".metric-row, .metric-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      document.querySelectorAll(".metric-row.active").forEach((el) => el.classList.remove("active"));
+      card.classList.add("active");
+      openMetricModal(card.dataset.metricKey, card);
+    });
   });
 }
 
@@ -929,10 +967,20 @@ function openMetricModalFromSeries(def, ctx, returnFocusEl) {
   if (spanSec != null) metaParts.push(formatHistoryDuration(spanSec));
   if (!drew) metaParts.push("waiting for more snapshots");
   $("metric-modal-meta").textContent = metaParts.join(" · ");
+  const chartSummary = $("metric-chart-summary");
+  if (chartSummary) {
+    chartSummary.textContent = drew
+      ? `${def.label} trend · ${metaParts.join(" · ")}`
+      : `${def.label} · waiting for more snapshots`;
+  }
 
-  $("metric-modal").removeAttribute("hidden");
-  bindModalFocusTrap($("metric-modal"), closeMetricModal);
-  $("metric-modal-close").focus();
+  const inspector = $("metric-modal") || $("metric-inspector");
+  inspector.removeAttribute("hidden");
+  inspector.hidden = false;
+  const shell = $("app-shell");
+  if (shell) shell.inert = true;
+  bindModalFocusTrap(inspector, closeMetricModal);
+  $("metric-modal-close")?.focus();
 }
 
 function openMetricModal(key, returnFocusEl) {
@@ -955,13 +1003,16 @@ function openMetricModal(key, returnFocusEl) {
 }
 
 function closeMetricModal() {
-  const modal = $("metric-modal");
-  if (modal.hasAttribute("hidden")) return;
+  const modal = $("metric-modal") || $("metric-inspector");
+  if (!modal || modal.hasAttribute("hidden")) return;
   modal.setAttribute("hidden", "");
-  if (metricModalReturnFocus) {
-    metricModalReturnFocus.focus();
-    metricModalReturnFocus = null;
-  }
+  modal.hidden = true;
+  const shell = $("app-shell");
+  if (shell) shell.inert = false;
+  document.querySelectorAll(".metric-card.active, .metric-row.active").forEach((el) => el.classList.remove("active"));
+  const returnFocus = metricModalReturnFocus;
+  metricModalReturnFocus = null;
+  if (returnFocus && typeof returnFocus.focus === "function") returnFocus.focus();
 }
 
 function openDiagnosticsModal(returnFocusEl) {
@@ -969,6 +1020,8 @@ function openDiagnosticsModal(returnFocusEl) {
   const brief = lastDashboardData?.brief || "";
   $("brief-technical").textContent = brief || "No snapshot loaded yet. Load a city in CS2 with the export mod enabled.";
   $("diagnostics-modal").removeAttribute("hidden");
+  const shell = $("app-shell");
+  if (shell) shell.inert = true;
   bindModalFocusTrap($("diagnostics-modal"), closeDiagnosticsModal);
   $("diagnostics-modal-close").focus();
 }
@@ -977,6 +1030,8 @@ function closeDiagnosticsModal() {
   const modal = $("diagnostics-modal");
   if (modal.hasAttribute("hidden")) return;
   modal.setAttribute("hidden", "");
+  const shell = $("app-shell");
+  if (shell) shell.inert = false;
   if (diagnosticsModalReturnFocus) {
     diagnosticsModalReturnFocus.focus();
     diagnosticsModalReturnFocus = null;
@@ -1012,22 +1067,21 @@ function renderGradeHistoryChart(svg, gradeHistory) {
 
 function renderDemandFactorsCard(demandFactors) {
   if (!demandFactors?.ok) {
-    return `<article class="card"><h2>RCI demand</h2><p class="muted">${escapeHtml(demandFactors?.summary || "Demand factor export unavailable.")}</p></article>`;
+    return `<div class="insight-ledger"><h3>RCI demand</h3><p class="muted">${escapeHtml(demandFactors?.summary || "Demand factor export unavailable.")}</p></div>`;
   }
   const rows = (demandFactors.zones || [])
     .map((zone) => {
       const pct = zone.demand_percent != null ? `${Math.round(zone.demand_percent)}%` : "—";
       return `<li class="finding-row severity-${escapeAttr(zone.severity || "info")}">
         <div class="finding-copy"><strong>${escapeHtml(zone.label)} · ${escapeHtml(pct)}</strong></div>
-        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(demandFactors.ask_prompt)}">Ask</button>
       </li>`;
     })
     .join("");
-  return `<article class="card">
-    <h2>RCI demand</h2>
+  return `<div class="insight-ledger">
+    <h3>RCI demand</h3>
     <p class="muted">${escapeHtml(demandFactors.summary || "")}</p>
     <ul class="finding-list">${rows}</ul>
-  </article>`;
+  </div>`;
 }
 
 function renderAccessGapsCard(accessGaps) {
@@ -1035,80 +1089,51 @@ function renderAccessGapsCard(accessGaps) {
     return "";
   }
   if (!accessGaps.ok) {
-    return `<article class="card"><h2>Next line advisor</h2><p class="muted">${escapeHtml(accessGaps.summary || "Transit access gap data unavailable.")}</p></article>`;
+    return `<div class="insight-ledger"><h3>Next line advisor</h3><p class="muted">${escapeHtml(accessGaps.summary || "Transit access gap data unavailable.")}</p></div>`;
   }
   const hotspots = (accessGaps.hotspots || []).slice(0, 5);
   const rows = hotspots
     .map(
       (spot) => `<li class="finding-row severity-${escapeAttr(spot.severity || "warn")}">
         <div class="finding-copy"><strong>${escapeHtml(spot.title || "Hotspot")}</strong> — ${escapeHtml(spot.detail || spot.suggestion || "Uncovered demand")}</div>
-        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(accessGaps.ask_prompt || "Where should my next transit line go?")}">Ask</button>
       </li>`
     )
     .join("");
   const capture = accessGaps.capture_note
     ? `<p class="muted small">${escapeHtml(accessGaps.capture_note)}</p>`
     : "";
-  return `<article class="card">
-    <h2>Next line advisor</h2>
+  return `<div class="insight-ledger">
+    <h3>Next line advisor</h3>
     <p class="muted">${escapeHtml(accessGaps.summary || "")}</p>
     ${capture}
     <ul class="finding-list">${rows || "<li class='muted'>No hotspots recorded yet — play with citizens traveling to populate trip capture.</li>"}</ul>
-  </article>`;
+  </div>`;
 }
 
 function renderUtilitiesCard(utilities) {
   if (!utilities?.ok) {
-    return `<article class="card"><h2>Utilities &amp; services</h2><p class="muted">${escapeHtml(utilities?.summary || "Utilities export unavailable.")}</p></article>`;
+    return `<div class="insight-ledger"><p class="muted">${escapeHtml(utilities?.summary || "Utilities export unavailable.")}</p></div>`;
   }
   const serviceRows = (utilities.services || [])
     .map((row) => {
-      const statusClass = row.severity === "warn" ? "warn" : "ok";
+      const severity = row.severity || (String(row.detail || "").toLowerCase().includes("shortage") ? "error" : "info");
+      const statusClass = severity === "error" ? "error" : severity === "warn" ? "warn" : "ok";
+      const sevLabel = severity === "error" ? "Critical" : severity === "warn" ? "Warning" : "OK";
       return `<li class="service-status-row ${statusClass}">
         <strong>${escapeHtml(row.label)}</strong>
-        <span class="muted">${escapeHtml(row.detail)}</span>
+        <span class="muted">${escapeHtml(row.detail || "")}</span>
+        <span class="service-sev">${sevLabel}</span>
       </li>`;
     })
     .join("");
-  const findings = (utilities.findings || [])
-    .map(
-      (row) => `<li class="finding-row severity-${escapeAttr(row.severity || "info")}">
-        <div class="finding-copy"><strong>${escapeHtml(row.title)}</strong> — ${escapeHtml(row.detail)}</div>
-        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(row.ask_prompt || utilities.ask_prompt)}">Ask</button>
-      </li>`
-    )
-    .join("");
-  return `<article class="card">
-    <h2>Utilities &amp; services</h2>
+  return `<div class="insight-ledger">
     <p class="muted">${escapeHtml(utilities.summary || "")}</p>
-    <ul class="service-status-list">${serviceRows}</ul>
-    ${findings ? `<ul class="finding-list">${findings}</ul>` : ""}
-  </article>`;
+    <ul class="service-status-list">${serviceRows || "<li class='muted'>No utility rows.</li>"}</ul>
+  </div>`;
 }
 
-function renderResolvedIssues(resolved) {
-  const block = $("issues-resolved");
-  const list = $("issues-resolved-list");
-  if (!block || !list) return;
-  if (!resolved?.length) {
-    block.hidden = true;
-    list.innerHTML = "";
-    return;
-  }
-  block.hidden = false;
-  list.innerHTML = resolved
-    .map(
-      (item) => `<li class="issue-item severity-info issue-item-resolved">
-        <span class="issue-severity-dot" aria-hidden="true"></span>
-        <div class="issue-item-body">
-          <div class="issue-item-top">
-            <strong class="issue-item-title">${escapeHtml(item.title)}</strong>
-            <span class="issue-item-meta">Resolved</span>
-          </div>
-        </div>
-      </li>`
-    )
-    .join("");
+function renderResolvedIssues(_resolved) {
+  /* Resolved history intentionally omitted from civic-command UI. */
 }
 
 async function submitAnswerFeedback(rating, question, answer) {
@@ -1181,6 +1206,7 @@ function onActiveCityChange(cityName) {
   toast(`Now advising: ${name}`, "ok");
 }
 
+
 function renderDashboard(data) {
   const grid = $("metric-grid");
   if (!data.ok) {
@@ -1189,13 +1215,14 @@ function renderDashboard(data) {
     $("hero-sub").textContent = data.hint || data.error || "";
     $("freshness-pill").textContent = "No snapshot";
     $("freshness-pill").className = "pill missing";
-    grid.innerHTML = `<div class="dashboard-error card">
+    grid.innerHTML = `<div class="dashboard-error">
       <p><strong>${escapeHtml(data.error || "Dashboard unavailable")}</strong></p>
       <p class="muted">${escapeHtml(data.hint || "Load a city in CS2 with CS2 Data Export enabled.")}</p>
     </div>`;
     $("brief-technical").textContent = "";
     const metaEl = $("dashboard-meta");
     if (metaEl) metaEl.textContent = "";
+    closeMetricModal();
     return;
   }
 
@@ -1242,6 +1269,7 @@ function renderDashboard(data) {
     drawSparkline(svg, values, forecastData[key]?.projected);
   });
   bindMetricCards();
+  renderAskContextRail();
 
   $("brief-technical").textContent = data.brief || "";
 
@@ -1265,23 +1293,84 @@ function renderDashboard(data) {
     cardStrip.innerHTML = "";
   }
 
-  if (!$("metric-modal").hasAttribute("hidden") && metricModalReturnFocus) {
+  if ($("metric-inspector") && !$("metric-inspector").hidden && metricModalReturnFocus) {
     openMetricModal(metricModalReturnFocus.dataset.metricKey, metricModalReturnFocus);
   }
 }
 
 function isIssueActionable(issue) {
-  return Boolean(issue.ask_prompt || issue.action_view === "settings");
+  return Boolean(issue.ask_prompt || issue.action_view === "settings" || issue.id);
+}
+
+function issueInspectorBusy() {
+  const input = $("issue-ask-input");
+  const log = $("issue-ask-log");
+  if (document.activeElement === input) return true;
+  if (issueAskAbort) return true;
+  if (log && log.childElementCount > 0) return true;
+  return false;
+}
+
+function selectIssue(issueId, options = {}) {
+  selectedIssueId = issueId ? String(issueId) : null;
+  document.querySelectorAll(".issue-item").forEach((el) => {
+    el.classList.toggle("selected", el.dataset.issueId === selectedIssueId);
+  });
+  const issue = (lastIssues || []).find((row) => String(row.id) === selectedIssueId);
+  renderIssueInspector(issue || null, options);
+}
+
+function renderIssueInspector(issue, options = {}) {
+  const preserveComposer = Boolean(options.preserveComposer);
+  const empty = $("issue-inspector-empty");
+  const body = $("issue-inspector-body");
+  if (!empty || !body) return;
+  if (!issue) {
+    empty.hidden = false;
+    body.hidden = true;
+    return;
+  }
+  empty.hidden = true;
+  body.hidden = false;
+  const severity = issue.severity || "warn";
+  const sevEl = $("issue-inspector-severity");
+  sevEl.textContent = severity === "error" ? "Critical" : severity === "info" ? "Info" : "Warning";
+  sevEl.className = `severity-label severity-${escapeAttr(severity)}`;
+  $("issue-inspector-title").textContent = issue.title || "Issue";
+  $("issue-inspector-detail").textContent = issue.detail || "";
+  const evidence = issue.evidence || [];
+  $("issue-inspector-evidence").innerHTML = evidence.length
+    ? evidence.map((row) => `<li><strong>${escapeHtml(row.label || "Evidence")}:</strong> ${escapeHtml(row.value || "")}</li>`).join("")
+    : `<li class="muted">No structured evidence.</li>`;
+  const causes = issue.likely_causes || [];
+  $("issue-inspector-causes").innerHTML = causes.length
+    ? causes.map((row) => `<li>${escapeHtml(row)}</li>`).join("")
+    : `<li class="muted">No likely causes listed.</li>`;
+  const actions = issue.actions || [];
+  $("issue-inspector-actions").innerHTML = actions.length
+    ? actions.map((row) => `<li>${escapeHtml(row)}</li>`).join("")
+    : `<li class="muted">No recommended actions listed.</li>`;
+  const settingsBtn = $("issue-open-settings");
+  if (settingsBtn) {
+    settingsBtn.hidden = issue.action_view !== "settings";
+    settingsBtn.onclick = () => switchView("settings", { section: "paths" });
+  }
+  if (!preserveComposer) {
+    const askInput = $("issue-ask-input");
+    if (askInput && issue.ask_prompt) askInput.value = issue.ask_prompt;
+    const log = $("issue-ask-log");
+    if (log) log.innerHTML = "";
+  }
 }
 
 function handleIssueRowClick(btn) {
-  const prompt = btn.dataset.prompt;
-  if (prompt) {
-    askFromPrompt(prompt);
+  const issueId = btn.dataset.issueId;
+  if (issueId) {
+    selectIssue(issueId);
     return;
   }
   if (btn.dataset.actionView === "settings") {
-    switchView("settings");
+    switchView("settings", { section: "paths" });
   }
 }
 
@@ -1289,23 +1378,16 @@ function renderIssueCard(issue) {
   const detailParts = [issue.detail, issue.hint].filter(Boolean);
   const detailText = detailParts.join(" — ");
   const severityClass = `severity-${escapeAttr(issue.severity)}`;
-  const bodyHtml = `<span class="issue-severity-dot" aria-hidden="true"></span>
+  const severityLabel = issue.severity === "error" ? "Critical" : issue.severity === "info" ? "Info" : "Warning";
+  const bodyHtml = `<span class="issue-severity-text">${severityLabel}</span>
     <div class="issue-item-body">
       <strong class="issue-item-title">${escapeHtml(issue.title)}</strong>
       ${detailText ? `<p class="issue-item-detail">${escapeHtml(detailText)}</p>` : ""}
     </div>`;
 
-  if (!isIssueActionable(issue)) {
-    return `<li class="issue-item ${severityClass}">${bodyHtml}</li>`;
-  }
-
-  const ariaLabel = issue.ask_prompt
-    ? `Ask about ${issue.title}`
-    : `Open settings: ${issue.title}`;
-  const promptAttr = issue.ask_prompt ? ` data-prompt="${escapeAttr(issue.ask_prompt)}"` : "";
+  const ariaLabel = `Inspect ${issue.title}`;
   const actionAttr = issue.action_view ? ` data-action-view="${escapeAttr(issue.action_view)}"` : "";
-
-  return `<li><button type="button" class="issue-item issue-item-btn ${severityClass}" aria-label="${escapeAttr(ariaLabel)}"${promptAttr}${actionAttr}>
+  return `<li><button type="button" class="issue-item issue-item-btn ${severityClass}" data-issue-id="${escapeAttr(issue.id || "")}" aria-label="${escapeAttr(ariaLabel)}"${actionAttr}>
     ${bodyHtml}
     <span class="issue-item-chevron" aria-hidden="true">›</span>
   </button></li>`;
@@ -1334,16 +1416,19 @@ function renderIssueSection(title, issueList) {
   </section>`;
 }
 
-function renderIssues(issues) {
+function renderIssues(issues, options = {}) {
   const list = $("issues-list");
+  const preserveSelection = Boolean(options.preserveSelection);
+  const scrollTop = list.scrollTop;
+  const activeId = document.activeElement?.dataset?.issueId || null;
   if (!issues.length) {
     list.innerHTML = `<div class="issues-empty">
-      <span class="issues-empty-icon" aria-hidden="true">✓</span>
       <div>
         <p class="issues-empty-title">All clear</p>
         <p class="issues-empty-lead muted small">No setup or city issues right now.</p>
       </div>
     </div>`;
+    selectIssue(null);
     return;
   }
 
@@ -1355,10 +1440,104 @@ function renderIssues(issues) {
   ].filter(Boolean);
 
   list.innerHTML = sections.join("");
-
   list.querySelectorAll(".issue-item-btn").forEach((btn) => {
     btn.addEventListener("click", () => handleIssueRowClick(btn));
   });
+  list.scrollTop = scrollTop;
+
+  let preferred = pendingIssueId || null;
+  pendingIssueId = null;
+  if (!preferred && selectedIssueId) {
+    preferred = issues.some((issue) => String(issue.id) === String(selectedIssueId))
+      ? selectedIssueId
+      : null;
+  }
+  if (!preferred && !preserveSelection) {
+    preferred = issues[0]?.id ?? null;
+  }
+  const keepComposer =
+    preserveSelection ||
+    issueInspectorBusy() ||
+    (Boolean(preferred) && String(preferred) === String(selectedIssueId));
+  selectIssue(preferred, { preserveComposer: keepComposer && Boolean(preferred) });
+  if (activeId) {
+    list.querySelector(`.issue-item-btn[data-issue-id="${CSS.escape(activeId)}"]`)?.focus({ preventScroll: true });
+  }
+}
+
+async function askIssueFollowUp(question) {
+  const q = String(question || "").trim();
+  if (!q) return;
+  const log = $("issue-ask-log");
+  const generation = ++issueAskGeneration;
+  if (issueAskAbort) issueAskAbort.abort();
+  const controller = new AbortController();
+  issueAskAbort = controller;
+  log.innerHTML += `<div class="bubble user">${escapeHtml(q)}</div>`;
+  const assistant = document.createElement("div");
+  assistant.className = "bubble assistant";
+  assistant.innerHTML = typingIndicatorHtml("Thinking…");
+  log.appendChild(assistant);
+  let answer = "";
+  try {
+    const response = await fetch("/api/ask/stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CitiesAI-Token": sessionToken(),
+      },
+      body: JSON.stringify({ question: q, use_llm: true }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Ask failed (${response.status})`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const handlers = {
+      status: (data) => {
+        if (generation !== issueAskGeneration) return;
+        assistant.innerHTML = typingIndicatorHtml(data?.text || "Thinking…");
+      },
+      token: (data) => {
+        if (generation !== issueAskGeneration) return;
+        answer += data?.text || "";
+        assistant.innerHTML = renderMarkdown(answer);
+      },
+      error: (data) => {
+        throw new Error(data?.error || "Ask failed");
+      },
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      buffer = drainSseBuffer(buffer, handlers);
+    }
+    buffer = drainSseBuffer(buffer + "\n\n", handlers);
+    if (!answer) assistant.textContent = "No answer returned.";
+  } catch (err) {
+    if (controller.signal.aborted) return;
+    assistant.textContent = String(err.message || err);
+  }
+}
+
+function renderAskContextRail() {
+  const root = $("ask-context-body");
+  if (!root) return;
+  const data = lastDashboardData;
+  if (!data?.ok) {
+    root.innerHTML = `<p class="muted small">Waiting for city data…</p>`;
+    return;
+  }
+  const m = data.metrics || {};
+  const card = data.report_card || {};
+  const priorities = (data.fix_first || []).slice(0, 3);
+  root.innerHTML = `
+    <div class="ask-context-item"><div class="ask-context-label">City</div><div class="ask-context-value">${escapeHtml(m.city_name || "Unknown")}</div></div>
+    <div class="ask-context-item"><div class="ask-context-label">Overall</div><div class="ask-context-value">${escapeHtml(card.overall_grade || "n/a")} (${escapeHtml(String(card.overall_score ?? "n/a"))})</div></div>
+    <div class="ask-context-item"><div class="ask-context-label">Population</div><div class="ask-context-value">${escapeHtml(formatMetricValue(m.population, metricDefByKey("population") || { key: "population" }))}</div></div>
+    <div class="ask-context-item"><div class="ask-context-label">Treasury</div><div class="ask-context-value">${escapeHtml(formatMetricValue(m.treasury, metricDefByKey("treasury") || { key: "treasury", currency: true }))}</div></div>
+    <div class="ask-context-item"><div class="ask-context-label">Top priorities</div><div>${priorities.length ? priorities.map((p) => `<div class="muted small">• ${escapeHtml(p.title || "")}</div>`).join("") : `<div class="muted small">None</div>`}</div></div>`;
 }
 
 function escapeHtml(text) {
@@ -1372,10 +1551,10 @@ function escapeAttr(text) {
   return escapeHtml(text).replace(/"/g, "&quot;");
 }
 
-async function refreshIssues({ toastOnError = false } = {}) {
+async function refreshIssues({ toastOnError = false, preserveSelection = true } = {}) {
   try {
     const data = await fetchJson("/api/issues");
-    applyIssuesData(data);
+    applyIssuesData(data, { preserveSelection });
     renderResolvedIssues(data.resolved_history || []);
     return data;
   } catch {
@@ -1390,7 +1569,7 @@ async function refreshIssues({ toastOnError = false } = {}) {
         issues,
         blocking_count: status.blocking_count ?? blockingIssueCount(issues),
       };
-      applyIssuesData(data);
+      applyIssuesData(data, { preserveSelection: true });
       return data;
     } catch (err) {
       if ($("view-issues").classList.contains("active")) {
@@ -1416,20 +1595,13 @@ async function loadDashboard() {
     pollErrorActive = false;
     renderDashboard(data);
     if (Array.isArray(data.issues)) {
-      lastIssues = data.issues;
-      updateIssuesNavLabel(lastIssues);
-      const fp = issuesFingerprint(lastIssues);
-      if (fp !== lastIssuesFingerprint) {
-        lastIssuesFingerprint = fp;
+      const prevFp = lastIssuesFingerprint;
+      applyIssuesData(data, { preserveSelection: true });
+      if (lastIssuesFingerprint !== prevFp) {
         await renderSuggestions();
       }
-      if ($("view-issues").classList.contains("active")) {
-        renderIssues(lastIssues);
-        if (data.resolved_history) {
-          renderResolvedIssues(data.resolved_history);
-        } else {
-          await refreshIssues(false);
-        }
+      if ($("view-issues").classList.contains("active") && data.resolved_history) {
+        renderResolvedIssues(data.resolved_history);
       }
     } else {
       await refreshIssues();
@@ -1460,11 +1632,7 @@ async function loadStatus({ promptOnboarding = false } = {}) {
     updateAskHelper();
 
     if (Array.isArray(status.issues)) {
-      lastIssues = status.issues;
-      updateIssuesNavLabel(lastIssues);
-      if ($("view-issues").classList.contains("active")) {
-        renderIssues(lastIssues);
-      }
+      applyIssuesData({ issues: status.issues }, { preserveSelection: true });
     }
     renderHealthStrip(status);
 
@@ -1800,7 +1968,6 @@ function renderTransitGroup(group) {
         <p class="transit-group-meta muted small">${escapeHtml(metaParts.join(" · "))}</p>
         ${group.action ? `<p class="muted small">${escapeHtml(group.action)}</p>` : ""}
       </div>
-      <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(group.ask_prompt || group.title)}">Ask</button>
     </div>
     <details class="transit-group-details">
       <summary>Show all ${group.line_count} lines</summary>
@@ -1817,7 +1984,7 @@ function renderTransitGroup(group) {
 async function loadInsights(options = {}) {
   const silent = Boolean(options.silent);
   const root = $("insights-content");
-  if (!silent) {
+    if (!silent) {
     root.innerHTML = `<div class="skeleton"></div>`.repeat(3);
   }
   try {
@@ -1832,14 +1999,30 @@ async function loadInsights(options = {}) {
     const utilities = data.utilities_services;
     const housing = data.housing;
     const accessGaps = data.access_gaps;
+    const budget = data.budget;
     const gradeHistory = data.grade_history;
 
-    const domainHtml = card.domains.map((d) => {
-      const delta = d.grade_delta ? `<span class="grade-delta muted small">${escapeHtml(d.grade_delta)}</span>` : "";
-      const ask = d.ask_prompt
-        ? `<button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(d.ask_prompt)}">Ask</button>`
+    const findingHtml = (items) =>
+      (items || [])
+        .map(
+          (f) => `<li class="finding-row severity-${escapeAttr(f.severity || "info")}">
+        <div class="finding-copy">
+          <strong>${escapeHtml(f.title)}</strong> — ${escapeHtml(f.detail)}
+          ${f.action ? `<p class="muted small">${escapeHtml(f.action)}</p>` : ""}
+        </div>
+      </li>`
+        )
+        .join("");
+
+    const sectionAsk = (prompt, label = "Advisor") =>
+      prompt
+        ? `<button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(prompt)}">${escapeHtml(label)}</button>`
         : "";
-      return `<div class="insight-domain ${gradeClass(d.grade)}">
+
+    const domainHtml = (card.domains || [])
+      .map((d) => {
+        const delta = d.grade_delta ? `<span class="grade-delta muted small">${escapeHtml(d.grade_delta)}</span>` : "";
+        return `<div class="insight-domain ${gradeClass(d.grade)}">
         <div class="insight-domain-head">
           <div class="insight-domain-title">
             <strong>${escapeHtml(d.label)}</strong>
@@ -1848,54 +2031,84 @@ async function loadInsights(options = {}) {
           ${renderGradeBadge(d.grade)}
         </div>
         <p class="insight-domain-detail muted small">${escapeHtml(d.detail || "")}</p>
-        ${ask ? `<div class="insight-domain-actions">${ask}</div>` : ""}
       </div>`;
-    }).join("");
+      })
+      .join("");
 
     const transitGroups = (transit.problem_groups || []).map((group) => renderTransitGroup(group)).join("");
-    const transitGroupsHtml = transitGroups
-      ? `<ul class="finding-list transit-group-list">${transitGroups}</ul>`
-      : `<p class="muted">All transit lines look healthy.</p>`;
+    const sections = [
+      {
+        id: "report-card",
+        label: "Report card",
+        html: `<section id="insight-report-card" class="insight-section">
+          <div class="insight-section-head report-card-head">
+            <div class="report-card-hero">
+              <h2>Report card</h2>
+              <div class="report-grade-cluster">
+                ${renderGradeBadge(card.overall_grade, { size: "lg" })}
+                <span class="report-score">${escapeHtml(String(card.overall_score ?? "—"))}<span class="report-score-den">/100</span></span>
+              </div>
+            </div>
+            ${sectionAsk(card.domains?.[0]?.ask_prompt, "Advisor")}
+          </div>
+          <div class="insights-domains">${domainHtml}</div>
+          <div class="grade-history-wrap">
+            <p class="muted small">Overall score trend</p>
+            <svg id="grade-history-chart" class="grade-history-chart" role="img" aria-label="Overall score trend"></svg>
+          </div>
+        </section>`,
+      },
+      {
+        id: "economy",
+        label: "Economy",
+        html: `<section id="insight-economy" class="insight-section">
+          <div class="insight-section-head">
+            <h2>Economy &amp; budget</h2>
+            ${sectionAsk(budget?.ask_prompt || "What should I fix in my budget?", "Advisor")}
+          </div>
+          <p class="muted">${escapeHtml(budget?.summary || "Budget analysis unavailable.")}</p>
+          <ul class="finding-list">${findingHtml(budget?.findings) || "<li class='muted'>No budget findings.</li>"}</ul>
+        </section>`,
+      },
+      {
+        id: "housing",
+        label: "Housing",
+        html: `<section id="insight-housing" class="insight-section">
+          <div class="insight-section-head">
+            <h2>Housing &amp; labor</h2>
+            ${sectionAsk(housing?.ask_prompt || "How can I improve housing and jobs?", "Advisor")}
+          </div>
+          <ul class="finding-list">${findingHtml(housing?.findings) || "<li class='muted'>Balanced</li>"}</ul>
+          ${renderDemandFactorsCard(demandFactors)}
+        </section>`,
+      },
+      {
+        id: "services",
+        label: "Services",
+        html: `<section id="insight-services" class="insight-section">
+          <div class="insight-section-head">
+            <h2>Utilities &amp; services</h2>
+            ${sectionAsk(utilities?.ask_prompt || "How do I fix utility pressure?", "Advisor")}
+          </div>
+          ${renderUtilitiesCard(utilities)}
+        </section>`,
+      },
+      {
+        id: "transit",
+        label: "Transit",
+        html: `<section id="insight-transit" class="insight-section">
+          <div class="insight-section-head">
+            <h2>Transit</h2>
+            ${sectionAsk(transit?.ask_prompt || "Should I add transit lines?", "Advisor")}
+          </div>
+          <p class="muted">${escapeHtml(transit?.summary || "")}</p>
+          ${transitGroups ? `<ul class="finding-list transit-group-list">${transitGroups}</ul>` : `<p class="muted">All transit lines look healthy.</p>`}
+          ${renderAccessGapsCard(accessGaps)}
+        </section>`,
+      },
+    ];
 
-    const findingHtml = (items) => (items || []).map((f) =>
-      `<li class="finding-row severity-${escapeAttr(f.severity || "info")}">
-        <div class="finding-copy">
-          <strong>${escapeHtml(f.title)}</strong> — ${escapeHtml(f.detail)}
-          ${f.action ? `<p class="muted small">${escapeHtml(f.action)}</p>` : ""}
-        </div>
-        <button type="button" class="btn ghost btn-sm insight-ask" data-prompt="${escapeAttr(f.ask_prompt || `What should I do about: ${f.title}?`)}">Ask</button>
-      </li>`
-    ).join("");
-
-    const housingCard = `<article class="card">
-        <h2>Housing &amp; labor</h2>
-        <ul class="finding-list">${findingHtml(housing.findings) || "<li class='muted'>Balanced</li>"}</ul>
-      </article>`;
-
-    const transitAdvisorCard = `<article class="card">
-        <h2>Transit advisor</h2>
-        <p class="muted">${escapeHtml(transit.summary || "")}</p>
-        ${transitGroupsHtml}
-      </article>`;
-
-    root.innerHTML = `
-      <article class="card">
-        <h2 class="insights-overall-head">
-          <span class="insights-overall-label">Report card</span>
-          <span class="insights-overall-grade">${renderGradeBadge(card.overall_grade)} <span class="muted small">(${card.overall_score}/100)</span></span>
-        </h2>
-        <div class="insights-domains">${domainHtml}</div>
-        <div class="grade-history-wrap">
-          <p class="muted small">Overall score trend</p>
-          <svg id="grade-history-chart" class="grade-history-chart" aria-hidden="true"></svg>
-        </div>
-      </article>
-      ${renderDemandFactorsCard(demandFactors)}
-      ${housingCard}
-      ${renderUtilitiesCard(utilities)}
-      ${transitAdvisorCard}
-      ${renderAccessGapsCard(accessGaps)}`;
-
+    root.innerHTML = sections.map((section) => section.html).join("");
     root.querySelectorAll(".insight-ask").forEach((btn) => {
       btn.addEventListener("click", () => askFromPrompt(btn.dataset.prompt));
     });
@@ -1999,36 +2212,20 @@ function renderApiKeyState({ configured, suffix, provider, verified = false, rep
 }
 
 function renderUpdateBanner(info) {
-  const banner = $("update-banner");
-  if (!banner) return;
-  if (!info?.update_available) {
-    banner.hidden = true;
-    banner.innerHTML = "";
+  const value = $("update-status-text");
+  const settingsBtn = $("nav-settings");
+  if (!value) return;
+  settingsBtn?.classList.remove("has-update");
+  if (!info) {
+    value.textContent = "Updates: checking…";
     return;
   }
-  const version = escapeHtml(info.latest_version || "");
-  const installLabel = info.can_install ? "Download & install" : "Open release page";
-  banner.hidden = false;
-  banner.innerHTML = `
-    <div class="update-banner-copy">
-      <p class="update-banner-title">Update available: v${version}</p>
-      <p class="muted small">A newer CitiesAI installer is on GitHub.</p>
-    </div>
-    <div class="update-banner-actions">
-      <button type="button" class="btn primary btn-sm" id="update-banner-install">${installLabel}</button>
-      <button type="button" class="btn ghost btn-sm" id="update-banner-dismiss">Not now</button>
-    </div>
-  `;
-  $("update-banner-install")?.addEventListener("click", () => {
-    if (info.can_install) {
-      void runUpdateInstall();
-    } else if (info.release_url) {
-      window.open(info.release_url, "_blank", "noopener");
-    }
-  });
-  $("update-banner-dismiss")?.addEventListener("click", () => {
-    void dismissUpdate(info.latest_version);
-  });
+  if (info.update_available) {
+    value.textContent = `Update available: v${info.latest_version || ""}`;
+    settingsBtn?.classList.add("has-update");
+    return;
+  }
+  value.textContent = info.current_version ? `Updates: v${info.current_version}` : "Updates: up to date";
 }
 
 function formatUpdateCheckedAt(iso) {
@@ -2055,8 +2252,8 @@ function renderUpdateSettings(info) {
   }
 
   if (!info) {
-    status.textContent = "Checking for updates…";
-    status.className = "muted small";
+    status.textContent = "Checking…";
+    status.className = "muted small settings-mod-hint";
     installBtn.hidden = true;
     return;
   }
@@ -2064,21 +2261,21 @@ function renderUpdateSettings(info) {
   let statusText = "";
   if (info.status_message) {
     statusText = info.status_message;
-    status.className = info.warning || info.error ? "muted small update-status-warn" : "muted small";
+    status.className =
+      info.warning || info.error
+        ? "muted small settings-mod-hint update-status-warn"
+        : "muted small settings-mod-hint";
   } else if (info.error) {
     status.textContent = info.error;
-    status.className = "muted small update-status-warn";
+    status.className = "muted small settings-mod-hint update-status-warn";
     installBtn.hidden = true;
     return;
   } else if (info.update_available) {
-    statusText = `v${info.latest_version} is available on GitHub.`;
-    status.className = "muted small";
-  } else if (info.latest_version) {
-    statusText = `No updates available — you're on the latest release (v${info.latest_version}).`;
-    status.className = "muted small";
+    statusText = `Update available${info.latest_version ? ` · v${info.latest_version}` : ""}`;
+    status.className = "muted small settings-mod-hint";
   } else {
-    statusText = "No updates available.";
-    status.className = "muted small";
+    statusText = "Up to date";
+    status.className = "muted small settings-mod-hint";
   }
 
   const checkedAt = formatUpdateCheckedAt(info.checked_at);
@@ -2111,6 +2308,7 @@ async function refreshUpdateUi({ force = false } = {}) {
     renderUpdateBanner(info);
     if (force || $("view-settings")?.classList.contains("active")) {
       renderUpdateSettings(info);
+    renderUpdateBanner(info);
     }
     return info;
   } catch (err) {
@@ -2256,10 +2454,60 @@ async function loadSettings() {
     if (lastUpdateInfo) {
       renderUpdateSettings(lastUpdateInfo);
     }
+    renderComayorToggle(Boolean(data.comayor_enabled !== false));
+    applyAdvisorStyleToForm(data.advisor_style || "civic");
+    updateAskHelper();
+    const watch = $("watch-enabled");
+    if (watch && !watchToggleTouched) {
+      watch.checked = Boolean(data.watch_enabled);
+    }
   } catch (err) {
     toast(String(err.message || err), "err");
   }
 }
+
+function renderComayorToggle(enabled) {
+  const btn = $("toggle-comayor");
+  if (!btn) return;
+  btn.dataset.enabled = enabled ? "1" : "0";
+  btn.textContent = enabled ? "Disable Co-Mayor" : "Enable Co-Mayor";
+  btn.classList.toggle("primary", !enabled);
+  btn.classList.toggle("secondary", enabled);
+}
+
+$("toggle-comayor")?.addEventListener("click", async () => {
+  const btn = $("toggle-comayor");
+  if (!btn) return;
+  const currentlyEnabled = btn.dataset.enabled !== "0";
+  const next = !currentlyEnabled;
+  btn.disabled = true;
+  try {
+    let result;
+    if (window.pywebview?.api?.set_comayor_enabled) {
+      result = await window.pywebview.api.set_comayor_enabled(next);
+    } else {
+      result = await fetchJson("/api/comayor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+    }
+    if (!result?.ok) {
+      toast(result?.error || "Could not update Co-Mayor", "err");
+      return;
+    }
+    renderComayorToggle(next);
+    if (next && result.error) {
+      toast(result.error, "err");
+    } else {
+      toast(next ? "Co-Mayor enabled" : "Co-Mayor disabled", "ok");
+    }
+  } catch (err) {
+    toast(String(err.message || err), "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 function setFeedbackCategory(category) {
   $("feedback-category").value = category;
@@ -2342,6 +2590,11 @@ function renderOnboardingStep() {
   const step = ONBOARDING_STEPS[onboardingStep];
   const total = ONBOARDING_STEPS.length;
   $("onboarding-bar").style.width = `${((onboardingStep + 1) / total) * 100}%`;
+  const progress = document.querySelector(".onboarding-progress");
+  if (progress) {
+    progress.setAttribute("aria-valuenow", String(onboardingStep + 1));
+    progress.setAttribute("aria-valuemax", String(total));
+  }
   $("onboarding-body").innerHTML = `<h2 id="onboarding-title">${step.title}</h2>${step.html}`;
   $("onboarding-back").hidden = onboardingStep === 0;
   $("onboarding-next").textContent = onboardingStep === total - 1 ? "Open dashboard" : "Continue";
@@ -2365,10 +2618,15 @@ async function completeOnboarding() {
         body: JSON.stringify({ api_key: keyInput.value.trim() }),
       });
     }
+    const style =
+      document.querySelector('input[name="onboard-advisor-style"]:checked')?.value ||
+      advisorStyle ||
+      "civic";
+    advisorStyle = style;
     await fetchJson("/api/onboarding/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: "{}",
+      body: JSON.stringify({ advisor_style: style }),
     });
     toast("Setup complete", "ok");
   } catch (err) {
@@ -2378,8 +2636,34 @@ async function completeOnboarding() {
   await loadStatus();
 }
 
-document.querySelectorAll(".nav-item").forEach((btn) => {
+document.querySelectorAll(".nav-item[data-view], .nav-icon-btn[data-view]").forEach((btn) => {
   btn.addEventListener("click", () => switchView(btn.dataset.view));
+});
+$("open-diagnostics")?.addEventListener("click", () => openDiagnosticsModal($("open-diagnostics")));
+$("settings-open-diagnostics")?.addEventListener("click", () =>
+  openDiagnosticsModal($("settings-open-diagnostics"))
+);
+document.querySelectorAll(".settings-index-item").forEach((btn) => {
+  btn.addEventListener("click", () => openSettingsSection(btn.dataset.settingsSection));
+});
+$("save-advisor-style")?.addEventListener("click", async () => {
+  try {
+    const style = selectedAdvisorStyleFromForm();
+    await fetchJson("/api/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ advisor_style: style }),
+    });
+    advisorStyle = style;
+    updateAskHelper();
+    toast("Advisor style saved", "ok");
+  } catch (err) {
+    toast(String(err.message || err), "err");
+  }
+});
+$("issue-ask-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await askIssueFollowUp($("issue-ask-input")?.value || "");
 });
 
 document.querySelectorAll("[data-view-jump]").forEach((btn) => {
@@ -2678,34 +2962,33 @@ $("onboarding-next").addEventListener("click", async () => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  const metricModal = $("metric-modal");
-  if (!metricModal.hasAttribute("hidden")) {
+  const metricModal = $("metric-modal") || $("metric-inspector");
+  if (metricModal && !metricModal.hasAttribute("hidden")) {
     closeMetricModal();
     return;
   }
   const diagnosticsModal = $("diagnostics-modal");
-  if (!diagnosticsModal.hasAttribute("hidden")) {
+  if (diagnosticsModal && !diagnosticsModal.hasAttribute("hidden")) {
     closeDiagnosticsModal();
     return;
   }
   const onboarding = $("onboarding");
-  if (!onboarding.hasAttribute("hidden")) {
-    void completeOnboarding();
+  if (onboarding && !onboarding.hasAttribute("hidden")) {
+    hideOnboarding();
   }
 });
 
-$("metric-modal-close").addEventListener("click", closeMetricModal);
-$("metric-modal").querySelectorAll("[data-close-metric-modal]").forEach((el) => {
+$("metric-modal-close")?.addEventListener("click", closeMetricModal);
+$("metric-modal")?.querySelectorAll("[data-close-metric-modal]").forEach((el) => {
+  el.addEventListener("click", closeMetricModal);
+});
+$("metric-inspector")?.querySelectorAll("[data-close-metric-modal]").forEach((el) => {
   el.addEventListener("click", closeMetricModal);
 });
 
 $("diagnostics-modal-close").addEventListener("click", closeDiagnosticsModal);
 $("diagnostics-modal").querySelectorAll("[data-close-diagnostics-modal]").forEach((el) => {
   el.addEventListener("click", closeDiagnosticsModal);
-});
-
-$("open-diagnostics").addEventListener("click", () => {
-  openDiagnosticsModal($("open-diagnostics"));
 });
 
 async function init() {

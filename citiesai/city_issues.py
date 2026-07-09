@@ -19,6 +19,8 @@ THRESHOLDS: dict[str, float | int] = {
     "moving_away_abs_min": 10,
     "unemployed_share_warn": 0.01,
     "unemployed_abs_min": 10,
+    "utility_fulfillment_warn": 85,
+    "utility_fulfillment_error": 50,
 }
 
 _SEMANTIC_PARTIAL_COPY: dict[str, dict[str, str]] = {
@@ -106,6 +108,16 @@ def _water_pressure_issue(snapshot: dict[str, Any], health: float | int | None) 
         if export_month is None or trade_water > export_month * 2:
             triggered = True
 
+    capacity = _num(pick(water, "Capacity", "capacity"))
+    consumption = _num(pick(water, "Consumption", "consumption"))
+    if _utility_flow_crisis(
+        fulfillment=fulfillment,
+        unfulfilled=unfulfilled,
+        capacity=capacity,
+        consumption=consumption,
+    ):
+        triggered = True
+
     if not triggered and health is not None and health < THRESHOLDS["health_low"]:
         status = pick(utility, "Status", "status")
         if status in ("partial", "ok") and water_pressure not in ("ok", "unknown", ""):
@@ -130,9 +142,16 @@ def _water_pressure_issue(snapshot: dict[str, Any], health: float | int | None) 
         parts.append(f"Health {format_social_index(health)}")
     detail = " · ".join(parts) if parts else "Fresh water demand is not fully met."
 
+    severity = _utility_severity(
+        fulfillment=fulfillment,
+        unfulfilled=unfulfilled,
+        capacity=capacity,
+        consumption=consumption,
+    )
+
     return _city_issue(
         "city_water_pressure",
-        severity="warn",
+        severity=severity,
         title="Water service under pressure",
         detail=detail,
         ask_prompt="How do I fix water shortages and pumping capacity?",
@@ -177,12 +196,50 @@ def _water_quality_issue(
     )
 
 
+def _utility_flow_crisis(
+    *,
+    fulfillment: float | int | None,
+    unfulfilled: float | int | None,
+    capacity: float | int | None,
+    consumption: float | int | None,
+) -> bool:
+    """True when aggregate flow metrics show a real shortage (defense in depth)."""
+    if consumption is not None and consumption > 0:
+        if capacity is None or capacity <= 0:
+            return True
+        if fulfillment is not None and fulfillment < THRESHOLDS["utility_fulfillment_warn"]:
+            return True
+        if unfulfilled is not None and unfulfilled > 0:
+            return True
+    return False
+
+
+def _utility_severity(
+    *,
+    fulfillment: float | int | None,
+    unfulfilled: float | int | None,
+    capacity: float | int | None,
+    consumption: float | int | None,
+) -> str:
+    if consumption is not None and consumption > 0 and (capacity is None or capacity <= 0):
+        return "error"
+    if fulfillment is not None and fulfillment < THRESHOLDS["utility_fulfillment_error"]:
+        return "error"
+    if unfulfilled is not None and consumption is not None and consumption > 0:
+        if unfulfilled >= consumption * 0.5:
+            return "error"
+    return "warn"
+
+
 def _sewage_pressure_issue(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     utility = pick_group(snapshot, "UtilityPressureSemantics")
     sewage_pressure = str(pick(utility, "SewagePressure", "sewage_pressure") or "")
     sewage = pick_group(utility, "Sewage")
     export_month = _num(pick(sewage, "ExportPerMonth", "export_per_month"))
     unfulfilled = _num(pick(sewage, "UnfulfilledConsumption", "unfulfilled_consumption"))
+    fulfillment = _num(pick(sewage, "FulfillmentPercent", "fulfillment_percent"))
+    capacity = _num(pick(sewage, "Capacity", "capacity"))
+    consumption = _num(pick(sewage, "Consumption", "consumption"))
 
     external = pick_group(snapshot, "ExternalConnections")
     service_trade = pick(external, "ServiceTrade", "service_trade")
@@ -195,20 +252,42 @@ def _sewage_pressure_issue(snapshot: dict[str, Any]) -> dict[str, Any] | None:
         triggered = True
     if export_month is not None and export_month > 0:
         triggered = True
+    if _utility_flow_crisis(
+        fulfillment=fulfillment,
+        unfulfilled=unfulfilled,
+        capacity=capacity,
+        consumption=consumption,
+    ):
+        triggered = True
 
     if not triggered:
         return None
 
     parts: list[str] = []
+    if fulfillment is not None:
+        parts.append(f"Sewage fulfillment {fulfillment:.0f}%")
     if unfulfilled is not None and unfulfilled > 0:
         parts.append(f"{int(unfulfilled)} unfulfilled sewage units")
+    if capacity is not None and consumption is not None and consumption > 0 and capacity <= 0:
+        parts.append("no sewage treatment capacity")
     if export_month is not None and export_month > 0:
         parts.append(f"exporting {int(export_month)} sewage units/month")
     detail = " · ".join(parts) if parts else "Sewage capacity or treatment is under pressure."
 
+    severity = _utility_severity(
+        fulfillment=fulfillment,
+        unfulfilled=unfulfilled,
+        capacity=capacity,
+        consumption=consumption,
+    )
+    if sewage_pressure in {"shortage", "capacity_shortage"} and severity == "warn":
+        # Explicit pressure enum from export still elevates when flow looks bad.
+        if fulfillment is not None and fulfillment < THRESHOLDS["utility_fulfillment_error"]:
+            severity = "error"
+
     return _city_issue(
         "city_sewage_pressure",
-        severity="warn",
+        severity=severity,
         title="Sewage and treatment under pressure",
         detail=detail,
         ask_prompt="How do I fix sewage and water treatment in my city?",
@@ -430,21 +509,30 @@ def detect_city_issues(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
         )
 
     utilities = analyze_utilities_services(snapshot)
+    existing_ids = {str(issue.get("id")) for issue in issues}
     for finding in utilities.get("findings", []):
         issue_id = {
             "electricity_pressure": "city_electricity_shortage",
             "garbage_accumulation": "city_garbage_crisis",
             "healthcare_beds_full": "city_healthcare_capacity",
+            "sewage_pressure": "city_sewage_pressure",
+            "water_pressure": "city_water_pressure",
         }.get(str(finding.get("id")), "city_utilities_pressure")
+        if issue_id in existing_ids:
+            continue
+        existing_ids.add(issue_id)
         issues.append(
             _city_issue(
                 issue_id,
                 severity=str(finding.get("severity", "warn")),
                 title=str(finding.get("title", "Utilities pressure")),
                 detail=str(finding.get("detail", utilities.get("summary", ""))),
-                ask_prompt=utilities.get(
-                    "ask_prompt",
-                    "Why is electricity or garbage service failing in my city?",
+                ask_prompt=str(
+                    finding.get("ask_prompt")
+                    or utilities.get(
+                        "ask_prompt",
+                        "Why is electricity or garbage service failing in my city?",
+                    )
                 ),
             )
         )
