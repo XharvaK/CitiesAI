@@ -2,6 +2,16 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.8.2] — 2026-07-10
+
+Incremental bug fixes and improvements.
+
+### Install
+
+Download **`CitiesAI-Setup-0.8.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases). Close CS2 before installing so the bundled export mod can update.
+
+---
+
 ## [0.8.1] — 2026-07-10
 
 ### Fixes

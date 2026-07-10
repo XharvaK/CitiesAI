@@ -36,7 +36,7 @@ Styles change tone and suggestions only — never measurements, severity, or ran
 
 | Requirement | Notes |
 |-------------|--------|
-| **Windows 10/11** | Desktop app (WebView2; usually preinstalled on Win 11) - current release **0.8.1** |
+| **Windows 10/11** | Desktop app (WebView2; usually preinstalled on Win 11) - current release **0.8.2** |
 | **Cities: Skylines II** | Steam or Xbox PC (Game Pass) |
 | **CS2 Data Export mod** | Bundled in the Windows installer |
 | **Mistral API key** | Optional; free Experiment tier is enough for testing |
@@ -45,9 +45,9 @@ Styles change tone and suggestions only — never measurements, severity, or ran
 
 ## Install (Windows — recommended)
 
-See [CHANGELOG.md](CHANGELOG.md) for 0.8.1 release notes.
+See [CHANGELOG.md](CHANGELOG.md) for 0.8.2 release notes.
 
-1. Download **`CitiesAI-Setup-0.8.1.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+1. Download **`CitiesAI-Setup-0.8.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
 2. Run the installer (per-user, no admin). SmartScreen may warn on unsigned builds — use **More info → Run anyway** if you trust the source.
 3. Launch **CitiesAI** from the Start menu.
 4. Follow the onboarding wizard:

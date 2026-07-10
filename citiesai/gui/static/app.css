@@ -2925,11 +2925,20 @@ html, body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.5rem;
-  align-items: end;
+  align-items: stretch;
 }
 
 .inspector-ask-composer .composer {
   min-width: 0;
+}
+
+.inspector-ask-composer #issue-ask-submit {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 5.5rem;
+  padding: 0 1.15rem;
 }
 
 /* One border only: outer .composer shell; textarea stays borderless inside. */
@@ -2969,17 +2978,6 @@ html, body {
   .inspector-ask-composer #issue-ask-submit {
     width: 100%;
   }
-}
-.inspector-ask-log {
-  margin-top: 0.75rem;
-  display: grid;
-  gap: 0.5rem;
-}
-.inspector-ask-log .bubble {
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
-  background: rgba(20, 18, 14, 0.7);
 }
 
 .ask-workspace .ask-shell {

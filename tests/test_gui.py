@@ -361,6 +361,13 @@ def test_static_index_contains_title() -> None:
     # Follow-up composer: one shell border, not a nested textarea border.
     assert b".inspector-ask-composer #issue-ask-input" in css
     assert b"border: none" in css
+    # Issues Send redirects to Advisor (same path as Insights), not inline SSE.
+    assert b"askIssueFollowUp" not in js
+    assert b'askFromPrompt($("issue-ask-input")' in js
+    assert b"issue-ask-log" not in body
+    assert b".inspector-ask-composer" in css
+    assert b"align-items: stretch" in css
+    assert b".inspector-ask-composer #issue-ask-submit" in css
     # Sidebar brand keeps mixed-case CitiesAI (not CSS uppercase on .brand-title).
     assert b'class="brand-title">CitiesAI</div>' in body
     for chunk in css.split(b".brand-title {"):

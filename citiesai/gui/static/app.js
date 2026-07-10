@@ -74,8 +74,6 @@ let selectedIssueId = null;
 let pendingIssueId = null;
 /** Stable issue id order while the Issues view is open (avoids poll re-rank flicker). */
 let issuesDisplayOrder = [];
-let issueAskAbort = null;
-let issueAskGeneration = 0;
 
 function $(id) {
   return document.getElementById(id);
@@ -1333,11 +1331,7 @@ function isIssueActionable(issue) {
 
 function issueInspectorBusy() {
   const input = $("issue-ask-input");
-  const log = $("issue-ask-log");
-  if (document.activeElement === input) return true;
-  if (issueAskAbort) return true;
-  if (log && log.childElementCount > 0) return true;
-  return false;
+  return document.activeElement === input;
 }
 
 function selectIssue(issueId, options = {}) {
@@ -1425,8 +1419,6 @@ function renderIssueInspector(issue, options = {}) {
   if (!preserveComposer) {
     const askInput = $("issue-ask-input");
     if (askInput && issue.ask_prompt) askInput.value = issue.ask_prompt;
-    const log = $("issue-ask-log");
-    if (log) log.innerHTML = "";
   }
 }
 
@@ -1549,62 +1541,6 @@ function renderIssues(issues, options = {}) {
   }
   if (activeId) {
     list.querySelector(`.issue-item-btn[data-issue-id="${CSS.escape(activeId)}"]`)?.focus({ preventScroll: true });
-  }
-}
-
-async function askIssueFollowUp(question) {
-  const q = String(question || "").trim();
-  if (!q) return;
-  const log = $("issue-ask-log");
-  const generation = ++issueAskGeneration;
-  if (issueAskAbort) issueAskAbort.abort();
-  const controller = new AbortController();
-  issueAskAbort = controller;
-  log.innerHTML += `<div class="bubble user">${escapeHtml(q)}</div>`;
-  const assistant = document.createElement("div");
-  assistant.className = "bubble assistant";
-  assistant.innerHTML = typingIndicatorHtml("Thinking…");
-  log.appendChild(assistant);
-  let answer = "";
-  try {
-    const response = await fetch("/api/ask/stream", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CitiesAI-Token": sessionToken(),
-      },
-      body: JSON.stringify({ question: q, use_llm: true }),
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`Ask failed (${response.status})`);
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    const handlers = {
-      status: (data) => {
-        if (generation !== issueAskGeneration) return;
-        assistant.innerHTML = typingIndicatorHtml(data?.text || "Thinking…");
-      },
-      token: (data) => {
-        if (generation !== issueAskGeneration) return;
-        answer += data?.text || "";
-        assistant.innerHTML = renderMarkdown(answer);
-      },
-      error: (data) => {
-        throw new Error(data?.error || "Ask failed");
-      },
-    };
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      buffer = drainSseBuffer(buffer, handlers);
-    }
-    buffer = drainSseBuffer(buffer + "\n\n", handlers);
-    if (!answer) assistant.textContent = "No answer returned.";
-  } catch (err) {
-    if (controller.signal.aborted) return;
-    assistant.textContent = String(err.message || err);
   }
 }
 
@@ -2748,9 +2684,9 @@ $("save-advisor-style")?.addEventListener("click", async () => {
     toast(String(err.message || err), "err");
   }
 });
-$("issue-ask-form")?.addEventListener("submit", async (e) => {
+$("issue-ask-form")?.addEventListener("submit", (e) => {
   e.preventDefault();
-  await askIssueFollowUp($("issue-ask-input")?.value || "");
+  askFromPrompt($("issue-ask-input")?.value || "");
 });
 
 document.querySelectorAll("[data-view-jump]").forEach((btn) => {
