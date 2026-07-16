@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from citiesai.ask_core import classify_ask_intent, needs_knowledge_retrieval
 from citiesai.llm import (
     LLMSettings,
     _chat_payload,
@@ -7,6 +8,16 @@ from citiesai.llm import (
     build_system_prompt,
 )
 from citiesai.version import __version__
+
+
+def test_classify_ask_intent_routes() -> None:
+    assert classify_ask_intent("How do I update CitiesAI?") == "app"
+    assert classify_ask_intent("Where do I put my API key?") == "app"
+    assert classify_ask_intent("My data export is missing") == "setup"
+    assert classify_ask_intent("Is this a pop farm or a megapolis?") == "classification"
+    assert classify_ask_intent("Why is my budget negative?") == "gameplay"
+    assert needs_knowledge_retrieval("classification") is False
+    assert needs_knowledge_retrieval("gameplay") is True
 
 
 def test_build_system_prompt_practical_no_sources() -> None:
@@ -28,6 +39,11 @@ def test_build_system_prompt_hardened() -> None:
     assert "close CS2" in prompt
     assert "install/reinstall export mod" in prompt
     assert "skip the numbered action list" in prompt
+    assert "City character / classification / judgment" in prompt
+    assert "pop farm or megapolis" in prompt
+    assert "Answer the question asked" in prompt
+    assert "unsolicited optimization lists" in prompt
+    assert "only when routing says to use it" in prompt
     assert "Never invent metrics" in prompt
     assert "patch versions" in prompt
     assert "Game Encyclopedia" in prompt
@@ -54,6 +70,8 @@ def test_build_system_prompt_advisor_styles_change_tone_only() -> None:
         assert "Never invent metrics" in prompt
         assert "No Sources section" in prompt
         assert "concrete in-game actions" in prompt
+        assert "when using gameplay output format" in prompt.lower()
+        assert "Answer the question asked" in prompt
     assert "Warm, game-native" in conversational
     assert "Technical and detailed" in analyst
     assert civic != conversational != analyst

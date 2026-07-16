@@ -49,7 +49,7 @@ Install
 1. Download CitiesAI-Setup-0.6.2.exe from https://github.com/XharvaK/CitiesAI/releases
 2. Run installer — SmartScreen may warn (unsigned beta); More info → Run anyway
 3. Launch CitiesAI → complete onboarding (detect game → install mod → load a city)
-4. Dashboard + Issues refresh ~every 5s while you play
+4. Dashboard + Issues refresh ~every 10s while you play
 
 Report bugs
 Use the in-app Feedback tab (not this channel). Submissions land here automatically when configured.

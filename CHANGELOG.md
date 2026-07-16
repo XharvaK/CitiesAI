@@ -2,6 +2,26 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.9.0] — 2026-07-16
+
+### Performance
+
+- **CS2 Data Export** — further CPU and hitch reductions. Quieter export/observer duty cycle and tighter hot paths.
+
+- **CitiesAI app** — lighter dashboard / Co-Mayor poll paths
+
+### Ask
+
+- **Improved harness.**
+
+- **Estimated impact** — roughly **50–70% less CPU usage** on top of 0.7.4 release, which was the first major performance optimization patch.
+
+### Install
+
+Download **`CitiesAI-Setup-0.9.0.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases). Close CS2 before installing so the bundled export mod can update.
+
+---
+
 ## [0.8.2] — 2026-07-10
 
 Incremental bug fixes and improvements.

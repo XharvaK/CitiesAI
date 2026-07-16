@@ -328,9 +328,9 @@ def test_api_hud_top_priority_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     data = api_hud()
     assert data["ok"] is True
     assert "top_priority" in data
-    assert "fix_first" in data
-    assert isinstance(data["fix_first"], list)
-    assert len(data["fix_first"]) <= 3
+    assert "priorities" in data
+    assert isinstance(data["priorities"], list)
+    assert len(data["priorities"]) <= 3
     priority = data["top_priority"]
     if priority is not None:
         assert "title" in priority
@@ -340,10 +340,10 @@ def test_api_hud_top_priority_shape(monkeypatch: pytest.MonkeyPatch) -> None:
         assert "likely_causes" in priority
         assert "actions" in priority
         assert "domain" in priority
-        assert data["fix_first"]
-        assert data["fix_first"][0]["id"] == priority["id"]
-        assert "evidence" in data["fix_first"][0]
-    for row in data["fix_first"]:
+        assert data["priorities"]
+        assert data["priorities"][0]["id"] == priority["id"]
+        assert "evidence" in data["priorities"][0]
+    for row in data["priorities"]:
         assert "actions" in row
         assert "likely_causes" in row
 
@@ -654,7 +654,7 @@ def test_hud_window_offline_and_stale_copy(monkeypatch: pytest.MonkeyPatch) -> N
                 "ok": True,
                 "meta": {"stale": True},
                 "report_card": {"overall_grade": "B"},
-                "fix_first": [],
+                "priorities": [],
                 "top_priority": None,
             },
         )

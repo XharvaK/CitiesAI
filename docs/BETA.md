@@ -28,7 +28,7 @@ You do **not** need Python, Unity, or modding experience. The installer includes
 
 1. Launch CitiesAI (or leave it running).
 2. Play CS2 with **CS2 Data Export** enabled.
-3. Dashboard and in-game export both refresh about every **5 seconds**.
+3. Dashboard and in-game export both refresh about every **10 seconds**.
 4. **Dashboard** — live metrics, Fresh/Stale pill, session digest, report-card strip.
 5. **Insights** — letter grades, RCI demand, utilities, transit doctor.
 6. **Issues** — setup checks and city pressures; click a row for **Ask** or **Settings**; optional **Push notifications** toggle for Windows toasts.

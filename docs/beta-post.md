@@ -24,7 +24,7 @@ I'm looking for beta testers for **CitiesAI**, a free desktop companion I built 
 
 **What it does**
 
-- Installs a small **read-only** export mod that writes city metrics to a JSON snapshot every ~5s while you play
+- Installs a small **read-only** export mod that writes city metrics to a JSON snapshot every ~10s while you play
 - **Dashboard** with live metrics, session digest, and report-card strip
 - **Insights** — letter grades, RCI demand, utilities, transit doctor
 - **Issues** — setup checks and city pressures; click a row to jump into Ask or Settings; optional Windows push notifications

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from citiesai.issue_advisor import enrich_issue_advisor, enrich_issues, rank_issues_for_queue
+from citiesai.issue_advisor import (
+    enrich_issue_advisor,
+    enrich_issues,
+    rank_issues_for_queue,
+    urgency_weight,
+)
 
 
 def test_enrich_issue_advisor_known_id() -> None:
@@ -69,3 +74,35 @@ def test_rank_issues_for_queue_prefers_city_errors() -> None:
     ranked = rank_issues_for_queue(issues)
     assert ranked[0]["id"] == "city_sewage_pressure"
     assert ranked[-1]["id"] == "setup_mod"
+
+
+def test_urgency_weight_utilities_above_leaving() -> None:
+    assert urgency_weight({"id": "city_sewage_pressure", "severity": "warn"}) < urgency_weight(
+        {"id": "city_citizens_leaving", "severity": "warn"}
+    )
+
+
+def test_rank_issues_for_queue_prefers_utility_over_leaving() -> None:
+    ranked = rank_issues_for_queue(
+        [
+            {
+                "id": "city_citizens_leaving",
+                "kind": "city",
+                "severity": "warn",
+                "title": "Citizens are moving away",
+            },
+            {
+                "id": "city_sewage_pressure",
+                "kind": "city",
+                "severity": "warn",
+                "title": "Sewage and treatment under pressure",
+            },
+            {
+                "id": "city_wellbeing_low",
+                "kind": "city",
+                "severity": "warn",
+                "title": "City wellbeing is low",
+            },
+        ]
+    )
+    assert ranked[0]["id"] == "city_sewage_pressure"

@@ -31,7 +31,7 @@ def main() -> int:
         "ok": True,
         "meta": {"stale": False},
         "report_card": {"overall_grade": "B"},
-        "fix_first": [
+        "priorities": [
             {
                 "id": "sewage",
                 "title": "Sewage and treatment under pressure",

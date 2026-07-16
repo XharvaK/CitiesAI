@@ -75,7 +75,7 @@ HUD_OLIVE = QColor("#a8ad78")
 HUD_OLIVE_MUTED = QColor("#737654")
 HUD_OLIVE_SURFACE = QColor("#202116")
 
-POLL_MS = 5000
+POLL_MS = 10000
 EXPAND_MS = 220
 COLLAPSE_MS = 180
 BODY_FADE_MS = 120
@@ -1000,7 +1000,7 @@ class CoMayorWindow(QWidget):
             tip = f"Grade {grade} — open CitiesAI dashboard" if grade else "Open CitiesAI dashboard"
             self._grade.setToolTip(tip)
 
-            raw = data.get("fix_first")
+            raw = data.get("priorities")
             priorities: list[dict[str, Any]] = []
             if isinstance(raw, list):
                 for item in raw[:3]:

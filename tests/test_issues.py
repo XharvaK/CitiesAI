@@ -97,6 +97,7 @@ def test_api_issues_with_sample(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 
     cfg = config_mod.CitiesAIConfig(export_path=export)
     monkeypatch.setattr("citiesai.gui.api.load_config", lambda: cfg)
+    monkeypatch.setattr("citiesai.gui.api.load_config_cached", lambda: cfg)
     monkeypatch.setattr("citiesai.gui.api._enriched_status", lambda: {
         "ok": True,
         "mod_installed": True,
@@ -124,6 +125,7 @@ def test_api_suggestions_with_sample(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
     cfg = config_mod.CitiesAIConfig(export_path=export)
     monkeypatch.setattr("citiesai.gui.api.load_config", lambda: cfg)
+    monkeypatch.setattr("citiesai.gui.api.load_config_cached", lambda: cfg)
     monkeypatch.setattr("citiesai.gui.api._enriched_status", lambda: {
         "ok": True,
         "mod_installed": True,

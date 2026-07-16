@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from .advice_output import write_advice
 from .city_name import resolve_city_display_name
@@ -15,6 +15,60 @@ from .snapshot import SnapshotMeta, load_snapshot_safe, snapshot_meta
 from .summary import build_city_brief
 
 RETRIEVAL_CONTEXT_MAX_CHARS = 5000
+
+AskIntent = Literal["app", "setup", "classification", "gameplay"]
+
+
+def classify_ask_intent(question: str) -> AskIntent:
+    """Cheap keyword router — skip wiki retrieval/tools for non-gameplay asks."""
+    q = question.lower().strip()
+    app_markers = (
+        "api key",
+        "citiesai",
+        "settings",
+        "how do i update",
+        "download",
+        "installer",
+        "mistral",
+        "openai",
+        "release",
+        "changelog",
+    )
+    if any(marker in q for marker in app_markers):
+        return "app"
+    setup_markers = (
+        "mod not",
+        "export not",
+        "missing export",
+        "latest.json",
+        "install mod",
+        "data export",
+        "corrupt snapshot",
+        "no snapshot",
+        "stale export",
+    )
+    if any(marker in q for marker in setup_markers):
+        return "setup"
+    classification_markers = (
+        "pop farm",
+        "population farm",
+        "megapolis",
+        "megalopolis",
+        "what kind of city",
+        "what type of city",
+        "city character",
+        "efficient or livable",
+        "livable or efficient",
+        "aesthetic vs",
+        "vs population",
+    )
+    if any(marker in q for marker in classification_markers):
+        return "classification"
+    return "gameplay"
+
+
+def needs_knowledge_retrieval(intent: AskIntent) -> bool:
+    return intent == "gameplay"
 
 
 def extract_retrieval_excerpt(bundle: str, *, max_chars: int = RETRIEVAL_CONTEXT_MAX_CHARS) -> str:
@@ -129,8 +183,11 @@ def build_ask_bundle_and_sources(
     question: str,
     *,
     limit: int = 5,
+    retrieve: bool = True,
 ) -> tuple[str, list[dict[str, Any]]]:
     parts: list[str] = [build_city_brief(snapshot, meta), "", f"## Question\n{question}\n"]
+    if not retrieve:
+        return "\n".join(parts), []
     queries = build_search_queries(snapshot, question)
     sources: list[dict[str, Any]] = []
     seen: set[tuple[str, str | None, str | None]] = set()
@@ -213,7 +270,15 @@ def run_ask(
         }
     meta = snapshot_meta(snapshot, path=path)
     brief = build_city_brief(snapshot, meta)
-    bundle, retrieval_sources = build_ask_bundle_and_sources(snapshot, meta, question, limit=limit)
+    intent = classify_ask_intent(question)
+    retrieve = needs_knowledge_retrieval(intent)
+    bundle, retrieval_sources = build_ask_bundle_and_sources(
+        snapshot,
+        meta,
+        question,
+        limit=limit,
+        retrieve=retrieve,
+    )
 
     conv = get_conversation()
     if multi_turn:
@@ -226,6 +291,7 @@ def run_ask(
         "meta": meta_to_dict(meta),
         "bundle": bundle,
         "sources": retrieval_sources,
+        "intent": intent,
     }
 
     if not use_llm:
@@ -233,8 +299,11 @@ def run_ask(
         payload["answer"] = None
         return payload
 
+    # Non-gameplay routes stay single-shot (prompt already covers app/setup/classification).
+    use_agentic = bool(agentic and intent == "gameplay")
+
     try:
-        if agentic:
+        if use_agentic:
             history = conv.messages_for_llm() if multi_turn else None
             user_content, retrieval_context, retrieval_bundle = prepare_agentic_ask(
                 question,

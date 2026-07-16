@@ -411,6 +411,7 @@ def test_api_ask_stream_missing_export(tmp_path: Path, monkeypatch: pytest.Monke
     missing = tmp_path / "missing.json"
     cfg = config_mod.CitiesAIConfig(export_path=missing)
     monkeypatch.setattr("citiesai.gui.api.load_config", lambda: cfg)
+    monkeypatch.setattr("citiesai.gui.api.load_config_cached", lambda: cfg)
 
     events = list(api_ask_stream({"question": "hello"}))
     assert events

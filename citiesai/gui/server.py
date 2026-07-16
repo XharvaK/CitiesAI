@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 import webview
 
+from ..cache import load_config_cached, load_export_cached
 from ..city_name import resolve_city_display_name
 from ..config import apply_config_to_env, load_config
 from ..constants import HISTORY_MAX_POINTS
@@ -22,7 +23,7 @@ from ..dashboard import extract_headline_metrics
 from ..env_store import load_env_file
 from ..historian import get_historian
 from ..single_instance import ensure_single_instance
-from ..snapshot import load_snapshot_safe, snapshot_meta
+from ..snapshot import snapshot_meta
 from ..updater import run_startup_update_check
 from ..version import __version__
 from ..watch import get_watch_service
@@ -75,12 +76,12 @@ WindowMode = Literal["native", "browser", "none"]
 
 
 def export_is_live() -> bool:
-    """True when a readable city snapshot exists and is within the app stale window (15s)."""
-    cfg = load_config()
+    """True when a readable city snapshot exists and is within the app stale window."""
+    cfg = load_config_cached()
     export_path = cfg.resolved_export_path()
     if export_path is None or not export_path.is_file():
         return False
-    snapshot, _err = load_snapshot_safe(export_path)
+    snapshot, _err = load_export_cached(export_path)
     if snapshot is None:
         return False
     meta = snapshot_meta(snapshot, path=export_path)
@@ -505,10 +506,10 @@ def _wait_for_url(url: str, *, timeout: float = 8.0) -> None:
 
 def _shutdown_server(server: CitiesAIHTTPServer) -> None:
     try:
-        cfg = load_config()
+        cfg = load_config_cached()
         export_path = cfg.resolved_export_path()
         if export_path.is_file():
-            snapshot, _ = load_snapshot_safe(export_path)
+            snapshot, _ = load_export_cached(export_path)
             if snapshot:
                 meta = snapshot_meta(snapshot, path=export_path)
                 metrics = extract_headline_metrics(snapshot, meta)

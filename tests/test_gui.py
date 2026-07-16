@@ -158,6 +158,7 @@ def test_api_dashboard_with_sample(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 
     cfg = config_mod.CitiesAIConfig(export_path=export)
     monkeypatch.setattr("citiesai.gui.api.load_config", lambda: cfg)
+    monkeypatch.setattr("citiesai.gui.api.load_config_cached", lambda: cfg)
 
     result = api_dashboard()
     assert result["ok"] is True
@@ -302,6 +303,7 @@ def test_api_dashboard_corrupt_export(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
     cfg = config_mod.CitiesAIConfig(export_path=export)
     monkeypatch.setattr("citiesai.gui.api.load_config", lambda: cfg)
+    monkeypatch.setattr("citiesai.gui.api.load_config_cached", lambda: cfg)
 
     result = api_dashboard()
     assert result["ok"] is False

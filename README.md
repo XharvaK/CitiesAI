@@ -21,7 +21,7 @@ Cities2-MCP corpus     →  wiki + encyclopedia  →  retrieval for answers
 Your Mistral API key   →  optional LLM  →  synthesized reply
 ```
 
-Export refreshes about every **5 seconds** while a city is loaded in-game (requires the bundled export mod). When CS2 is closed, the last snapshot stays on disk; the dashboard shows **Stale** after ~15 seconds without a new export — that is normal, not a setup error.
+Export refreshes about every **10 seconds** while a city is loaded in-game (requires the bundled export mod). When CS2 is closed, the last snapshot stays on disk; the dashboard shows **Stale** after ~30 seconds without a new export — that is normal, not a setup error.
 
 The **Issues** view lists setup problems and **current city pressures** (water, health, jobs, transit, budget, and more) in a ranked queue. Selecting a row opens an evidence-first advisor inspector (evidence → likely causes → actions → optional follow-up Ask). Setup issues can jump to **Settings**. Enable **Push notifications** under **Settings → Notifications** for Windows toasts when issues change (`citiesai gui --watch` enables the same background alerts; the preference persists across sessions and defaults to off).
 
@@ -36,7 +36,7 @@ Styles change tone and suggestions only — never measurements, severity, or ran
 
 | Requirement | Notes |
 |-------------|--------|
-| **Windows 10/11** | Desktop app (WebView2; usually preinstalled on Win 11) - current release **0.8.2** |
+| **Windows 10/11** | Desktop app (WebView2; usually preinstalled on Win 11) - current release **0.9.0** |
 | **Cities: Skylines II** | Steam or Xbox PC (Game Pass) |
 | **CS2 Data Export mod** | Bundled in the Windows installer |
 | **Mistral API key** | Optional; free Experiment tier is enough for testing |
@@ -45,9 +45,9 @@ Styles change tone and suggestions only — never measurements, severity, or ran
 
 ## Install (Windows — recommended)
 
-See [CHANGELOG.md](CHANGELOG.md) for 0.8.2 release notes.
+See [CHANGELOG.md](CHANGELOG.md) for 0.9.0 release notes.
 
-1. Download **`CitiesAI-Setup-0.8.2.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
+1. Download **`CitiesAI-Setup-0.9.0.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases).
 2. Run the installer (per-user, no admin). SmartScreen may warn on unsigned builds — use **More info → Run anyway** if you trust the source.
 3. Launch **CitiesAI** from the Start menu.
 4. Follow the onboarding wizard:

@@ -14,13 +14,14 @@ from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
 
+from .cache import load_config_cached, load_export_cached
 from .city_issues import detect_city_issues
-from .config import config_dir, load_config
+from .config import config_dir
 from .constants import HISTORY_MAX_POINTS, WATCH_ALERT_COOLDOWN_SECONDS
 from .dashboard import extract_headline_metrics
 from .forecasts import build_forecasts
 from .historian import get_historian
-from .snapshot import load_snapshot_safe, snapshot_meta
+from .snapshot import snapshot_meta
 
 _STATE_FILE = "watch_state.json"
 _TOAST_LOGO_NAME = "toast-logo.png"
@@ -172,7 +173,7 @@ def _sync_watch_city(state: dict[str, Any], city: str) -> None:
 
 def evaluate_watch_alerts(snapshot: dict[str, Any], *, state: dict[str, Any] | None = None) -> list[dict[str, str]]:
     state = state if state is not None else _load_state()
-    export_path = load_config().resolved_export_path()
+    export_path = load_config_cached().resolved_export_path()
     meta = snapshot_meta(snapshot, path=export_path)
     metrics = extract_headline_metrics(snapshot, meta)
     city = str(metrics.get("city_name") or "unknown")
@@ -180,7 +181,7 @@ def evaluate_watch_alerts(snapshot: dict[str, Any], *, state: dict[str, Any] | N
     alerts: list[dict[str, str]] = []
 
     for issue in detect_city_issues(snapshot):
-        if issue.get("severity") != "warn":
+        if issue.get("severity") not in ("warn", "error"):
             continue
         alert_id = f"{city}:issue:{issue.get('id')}"
         if _should_alert(state, alert_id):
@@ -261,11 +262,11 @@ class WatchService:
             self._stop.wait(self._interval)
 
     def tick(self, *, notify: bool = True) -> list[dict[str, str]]:
-        cfg = load_config()
+        cfg = load_config_cached()
         path = cfg.resolved_export_path()
         if not path.is_file():
             return []
-        snapshot, _ = load_snapshot_safe(path)
+        snapshot, _ = load_export_cached(path)
         if snapshot is None:
             return []
         get_historian().sync(path)

@@ -4,9 +4,45 @@ from __future__ import annotations
 
 from typing import Any
 
-from .fix_first import urgency_weight
-
 _SEVERITY_ORDER = {"error": 0, "warn": 1, "info": 2}
+
+# Lower weight = higher urgency. Symptoms (leaving/wellbeing) rank below utility crises.
+_URGENCY_BY_ID: dict[str, int] = {
+    "city_sewage_pressure": 0,
+    "city_water_pressure": 0,
+    "city_water_quality": 0,
+    "city_electricity_shortage": 0,
+    "city_utilities_pressure": 0,
+    "city_garbage_crisis": 1,
+    "city_healthcare_capacity": 1,
+    "city_services_understaffed": 1,
+    "city_traffic": 1,
+    "city_transit_gaps": 1,
+    "city_budget_deficit": 2,
+    "city_unemployment": 2,
+    "city_demand_weak": 2,
+    "city_homeless": 3,
+    "city_health_low": 3,
+    "city_wellbeing_low": 3,
+    "city_citizens_leaving": 3,
+}
+
+
+def urgency_weight(item: dict[str, Any]) -> int:
+    """Return urgency tier (0 = most urgent)."""
+    issue_id = str(item.get("id") or "")
+    if issue_id in _URGENCY_BY_ID:
+        return _URGENCY_BY_ID[issue_id]
+    if issue_id.startswith("grade_"):
+        return 4
+    severity = str(item.get("severity") or "info")
+    if severity == "error" and any(
+        key in issue_id for key in ("sewage", "water", "electric", "power")
+    ):
+        return 0
+    if severity == "error":
+        return 1
+    return 3
 
 _DOMAIN_BY_ID_PREFIX: dict[str, str] = {
     "city_sewage": "services",

@@ -37,16 +37,19 @@ def build_mayors_briefing(
     historian: CityHistorian | None = None,
     history: dict[str, Any] | None = None,
     issues: list[dict[str, Any]] | None = None,
+    report_card: dict[str, Any] | None = None,
+    forecasts: dict[str, Any] | None = None,
+    digest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     hist = historian or get_historian()
     history = history or hist.get_history(export_path=meta.path)
-    digest = hist.session_digest(history=history)
+    digest = digest if digest is not None else hist.session_digest(history=history)
     resolved = hist.get_resolved_since_last_session(history=history)
     issues = issues or detect_city_issues(snapshot)
     issues = hist.enrich_issues_with_lifecycle(issues, city_name=history.get("city_name"))
     top_issues = _top_issues(issues)
-    forecasts = build_forecasts(history)
-    report_card = build_report_card(
+    forecasts = forecasts if forecasts is not None else build_forecasts(history)
+    report_card = report_card or build_report_card(
         snapshot,
         meta,
         previous_domain_scores=hist.previous_session_report_scores(
@@ -119,27 +122,4 @@ def build_mayors_briefing(
             "overall_score": report_card.get("overall_score"),
         },
         "text": text,
-    }
-
-
-def build_city_briefing_card(
-    *,
-    digest: dict[str, Any],
-    resolved: list[dict[str, Any]],
-    grade_deltas: list[dict[str, Any]],
-    forecasts: dict[str, Any],
-    priorities: list[dict[str, Any]],
-) -> dict[str, Any]:
-    since_last_session = list(digest.get("summary") or []) if digest.get("has_changes") else []
-    forecast_alerts = list(forecasts.get("alerts") or [])[:3]
-    has_content = bool(
-        since_last_session or priorities or resolved or grade_deltas or forecast_alerts
-    )
-    return {
-        "has_content": has_content,
-        "since_last_session": since_last_session,
-        "priorities": priorities,
-        "resolved": resolved,
-        "grade_deltas": grade_deltas,
-        "forecast_alerts": forecast_alerts,
     }

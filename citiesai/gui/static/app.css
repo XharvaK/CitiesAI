@@ -866,10 +866,6 @@ button.issue-item-btn:hover .issue-item-chevron {
 }
 
 
-.issues-resolved {
-  margin-top: 0.85rem;
-}
-
 .issues-empty {
   display: flex;
   align-items: center;
@@ -2050,40 +2046,9 @@ select.control.select-control {
   .sidebar-foot { width: 100%; }
 }
 
-.update-banner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin: 0 0 1rem;
-  padding: 0.75rem 1rem;
-  background: rgba(143, 170, 122, 0.12);
-  border: 1px solid rgba(143, 170, 122, 0.35);
-  border-radius: var(--radius-sm);
-}
-
 .update-banner[hidden],
-.report-card-strip[hidden],
-.fix-first-card[hidden],
-.forecast-alerts[hidden] {
+.report-card-strip[hidden] {
   display: none !important;
-}
-
-.update-banner-copy {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.update-banner-title {
-  margin: 0;
-  font-weight: 600;
-}
-
-.update-banner-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
 }
 
 .settings-updates {
@@ -2342,97 +2307,6 @@ select.control.select-control {
   color: var(--body);
 }
 
-.city-briefing {
-  margin-bottom: 1rem;
-  padding: 1rem 1.1rem;
-}
-
-.city-briefing-head {
-  margin-bottom: 0.75rem;
-}
-
-.city-briefing-section + .city-briefing-section {
-  margin-top: 0.85rem;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--border-soft);
-}
-
-.briefing-section-eyebrow {
-  margin: 0 0 0.55rem;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.briefing-priority-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.55rem;
-}
-
-.briefing-priority-item {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: start;
-  gap: 0.65rem;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid var(--border-soft);
-  border-left-width: 3px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-}
-
-.briefing-priority-item.severity-warn {
-  border-left-color: var(--warn);
-}
-
-.briefing-priority-item.severity-error {
-  border-left-color: var(--bad);
-}
-
-.briefing-priority-item.severity-info {
-  border-left-color: var(--secondary);
-}
-
-.briefing-priority-index {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--muted);
-  line-height: 1.45;
-  min-width: 1rem;
-}
-
-.briefing-priority-title {
-  display: block;
-  font-weight: 500;
-  color: var(--body);
-  line-height: 1.35;
-}
-
-.briefing-priority-detail {
-  margin: 0.2rem 0 0;
-}
-
-.city-briefing-list {
-  margin: 0.35rem 0 0;
-  padding-left: 1.1rem;
-}
-
-.city-briefing-line {
-  margin: 0.35rem 0 0;
-}
-
-.city-briefing-forecasts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.35rem;
-}
-
 .metrics-section-header {
   margin: 0 0 0.65rem;
 }
@@ -2453,30 +2327,6 @@ select.control.select-control {
   gap: 0.5rem;
   margin: 0.35rem 0 1rem;
   align-items: center;
-}
-
-.fix-first-card {
-  margin-bottom: 1rem;
-  padding: 1rem 1.1rem;
-}
-
-.fix-first-head {
-  margin-bottom: 0.65rem;
-}
-
-.fix-first-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.65rem;
-}
-
-.fix-first-item {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
 }
 
 .driver-chips {
@@ -2507,16 +2357,6 @@ select.control.select-control {
   font-size: 0.82rem;
   padding: 0.3rem 0.55rem;
   border-radius: var(--radius-sm);
-}
-
-.forecast-alerts { margin-bottom: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.forecast-pill {
-  font-size: 0.82rem;
-  padding: 0.25rem 0.6rem;
-  border-radius: var(--radius-sm);
-  background: rgba(196, 160, 90, 0.15);
-  color: var(--warn);
-  border: 1px solid rgba(196, 160, 90, 0.35);
 }
 
 .insights-grid { display: grid; gap: 1rem; }

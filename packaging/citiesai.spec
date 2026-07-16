@@ -45,7 +45,17 @@ binaries += _ps_binaries
 hiddenimports += _ps_hidden
 
 # PySide6 Essentials — avoid collect_all (pulls broken support submodule scans).
-datas += collect_data_files("PySide6", includes=["plugins/**", "translations/**"])
+# Skip translations (unused by Co-Mayor; onefile extract often fails on *.qm under UPX).
+datas += collect_data_files(
+    "PySide6",
+    includes=[
+        "plugins/platforms/**",
+        "plugins/styles/**",
+        "plugins/imageformats/**",
+        "plugins/iconengines/**",
+        "plugins/generic/**",
+    ],
+)
 binaries += collect_dynamic_libs("PySide6")
 binaries += collect_dynamic_libs("shiboken6")
 
@@ -109,7 +119,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,

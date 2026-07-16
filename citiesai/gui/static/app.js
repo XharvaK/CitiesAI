@@ -1,5 +1,5 @@
-const POLL_MS = 5000;
-const STALE_AFTER_SECONDS = 15;
+const POLL_MS = 10000;
+const STALE_AFTER_SECONDS = 30;
 const ASK_TIMEOUT_MS = 480000;
 let activeAskAbort = null;
 let activeAskGeneration = 0;
@@ -486,6 +486,12 @@ function scrollChatToBottom(behavior = "auto") {
 }
 
 function askFromPrompt(prompt) {
+  if (!llmConfigured) {
+    toast("Add an API key in Settings for AI answers", "err");
+    switchView("settings");
+    openSettingsSection("ai");
+    return;
+  }
   $("question").value = prompt;
   autoGrowTextarea($("question"));
   switchView("ask");
@@ -743,10 +749,16 @@ function updateAskHelper() {
       : advisorStyle === "analyst"
         ? "Analyst voice"
         : "Civic voice";
+  const submitBtn = $("ask-submit");
+  const question = $("question");
   if (llmConfigured) {
     el.textContent = `${styleNote}. Grounded in your city snapshot and Cities Wiki.`;
+    if (submitBtn) submitBtn.disabled = false;
+    if (question) question.disabled = false;
   } else {
-    el.textContent = `${styleNote}. Add an API key in Settings for AI answers — stats work without one.`;
+    el.innerHTML = `${styleNote}. <strong>Add an API key in Settings</strong> for AI answers — stats, Insights, and Issues work without one.`;
+    if (submitBtn) submitBtn.disabled = true;
+    if (question) question.disabled = true;
   }
 }
 
@@ -1554,7 +1566,7 @@ function renderAskContextRail() {
   }
   const m = data.metrics || {};
   const card = data.report_card || {};
-  const priorities = (data.fix_first || []).slice(0, 3);
+  const priorities = (data.priorities || []).slice(0, 3);
   root.innerHTML = `
     <div class="ask-context-item"><div class="ask-context-label">City</div><div class="ask-context-value">${escapeHtml(m.city_name || "Unknown")}</div></div>
     <div class="ask-context-item"><div class="ask-context-label">Overall</div><div class="ask-context-value">${escapeHtml(card.overall_grade || "n/a")} (${escapeHtml(String(card.overall_score ?? "n/a"))})</div></div>
@@ -1578,7 +1590,6 @@ async function refreshIssues({ toastOnError = false, preserveSelection = true } 
   try {
     const data = await fetchJson("/api/issues");
     applyIssuesData(data, { preserveSelection });
-    renderResolvedIssues(data.resolved_history || []);
     return data;
   } catch {
     try {
@@ -1622,9 +1633,6 @@ async function loadDashboard() {
       applyIssuesData(data, { preserveSelection: true });
       if (lastIssuesFingerprint !== prevFp) {
         await renderSuggestions();
-      }
-      if ($("view-issues").classList.contains("active") && data.resolved_history) {
-        renderResolvedIssues(data.resolved_history);
       }
     } else {
       await refreshIssues();
@@ -2966,7 +2974,7 @@ $("onboarding-back").addEventListener("click", () => {
 });
 
 $("onboarding-next").addEventListener("click", async () => {
-  if (onboardingStep === 2) {
+  if (onboardingStep === 1) {
     try {
       const data = await fetchJson("/api/install-mod", { method: "POST", body: "{}" });
       if (!data.ok) toast(data.error, "err");

@@ -17,11 +17,13 @@ from ..analyzers import (
 )
 from ..ask_core import (
     build_ask_bundle_and_sources,
+    classify_ask_intent,
     meta_to_dict,
+    needs_knowledge_retrieval,
     prepare_agentic_ask,
     run_ask,
 )
-from ..briefing import build_city_briefing_card, build_mayors_briefing
+from ..briefing import build_mayors_briefing
 from ..cache import load_config_cached, load_export_cached
 from ..city_issues import detect_city_issues
 from ..city_name import resolve_city_display_name
@@ -36,13 +38,12 @@ from ..config import (
     set_onboarding_complete,
     set_watch_enabled,
 )
-from ..constants import HISTORY_MAX_POINTS
+from ..constants import HISTORY_MAX_POINTS, STALE_AFTER_SECONDS
 from ..conversation import get_conversation
 from ..dashboard import extract_headline_metrics
 from ..discovery import discover_paths
 from ..env_store import api_key_suffix, clear_env_var, read_env_var, save_env_var
 from ..feedback import submit_feedback
-from ..fix_first import build_fix_first_playbook
 from ..forecasts import build_forecasts
 from ..historian import get_historian
 from ..issue_advisor import enrich_issue_advisor, enrich_issues, rank_issues_for_queue
@@ -60,7 +61,7 @@ from ..official_fallbacks import fill_official_metric_gaps
 from ..report_html import write_report_file
 from ..report_ops import build_and_persist_report_card
 from ..setup_wizard import apply_llm_provider, save_detected_config
-from ..snapshot import load_snapshot_safe, snapshot_meta
+from ..snapshot import snapshot_meta
 from ..status import collect_status_report
 from ..suggestions import build_ask_suggestions
 from ..summary import build_city_brief
@@ -86,6 +87,11 @@ def _load_live_export() -> tuple[dict[str, Any], Any, Path]:
     return snapshot, meta, export_path
 
 
+def _top_city_priorities(issues: list[dict[str, Any]], *, limit: int = 3) -> list[dict[str, Any]]:
+    city = [issue for issue in issues if issue.get("kind") == "city"]
+    return enrich_issues(rank_issues_for_queue(city))[:limit]
+
+
 def api_hud() -> dict[str, Any]:
     try:
         snapshot, meta, _export_path = _load_live_export()
@@ -93,7 +99,6 @@ def api_hud() -> dict[str, Any]:
         return {"ok": False, "error": str(exc)}
     historian = get_historian()
     history = historian.get_history(export_path=meta.path)
-    metrics = extract_headline_metrics(snapshot, meta)
     report_card = build_report_card(
         snapshot,
         meta,
@@ -104,19 +109,10 @@ def api_hud() -> dict[str, Any]:
     )
     issues = detect_city_issues(snapshot)
     issues = historian.enrich_issues_with_lifecycle(issues, city_name=history.get("city_name"))
-    briefing = build_mayors_briefing(snapshot, meta, historian=historian, history=history, issues=issues)
-    forecasts = briefing.get("forecasts") or {}
-    fix_first = build_fix_first_playbook(
-        issues=issues,
-        briefing=None,
-        report_card=report_card,
-        forecasts=forecasts,
-    )
-    top_priority = fix_first[0] if fix_first else None
+    priorities = _top_city_priorities(issues)
+    top_priority = priorities[0] if priorities else None
     age_seconds = meta.age_seconds if meta.age_seconds is not None else 0
-    stale = age_seconds > 3600
-    enriched_fix_first = enrich_issues(fix_first)
-    enriched_top = enrich_issue_advisor(top_priority) if top_priority else None
+    stale = age_seconds > STALE_AFTER_SECONDS
     return {
         "ok": True,
         "meta": {
@@ -124,20 +120,13 @@ def api_hud() -> dict[str, Any]:
             "age_seconds": age_seconds,
             "stale": stale,
         },
-        "metrics": {
-            "city_name": metrics.get("city_name"),
-            "population": metrics.get("population"),
-            "population_change_per_hour": metrics.get("population_change_per_hour"),
-            "treasury": metrics.get("treasury"),
-            "treasury_net_per_hour": metrics.get("treasury_net_per_hour"),
-        },
         "report_card": {
             "overall_grade": report_card.get("overall_grade"),
             "overall_score": report_card.get("overall_score"),
         },
-        "top_priority": enriched_top,
-        "fix_first": enriched_fix_first,
-        "advisor_style": load_config().advisor_style,
+        "top_priority": enrich_issue_advisor(top_priority) if top_priority else None,
+        "priorities": priorities,
+        "advisor_style": load_config_cached().advisor_style,
     }
 
 
@@ -158,11 +147,11 @@ def _enriched_status() -> dict[str, Any]:
 
 
 def _metrics_for_status() -> dict[str, Any] | None:
-    cfg = load_config()
+    cfg = load_config_cached()
     export_path = cfg.resolved_export_path()
     if not export_path.is_file():
         return None
-    snapshot, err = load_snapshot_safe(export_path)
+    snapshot, err = load_export_cached(export_path)
     if snapshot is None:
         return None
     meta = snapshot_meta(snapshot, path=export_path)
@@ -244,11 +233,10 @@ def api_issues() -> dict[str, Any]:
     report = _status_with_issues()
     issues = report["issues"]
     city_name = None
-    resolved_history: list[dict[str, Any]] = []
-    cfg = load_config()
+    cfg = load_config_cached()
     export_path = cfg.resolved_export_path()
     if export_path.is_file():
-        snapshot, err = load_snapshot_safe(export_path)
+        snapshot, err = load_export_cached(export_path)
         if snapshot is not None:
             meta = snapshot_meta(snapshot, path=export_path)
             city_name = _sync_city_state(snapshot, meta, issues)
@@ -260,14 +248,12 @@ def api_issues() -> dict[str, Any]:
                 historian=historian,
             )
             issues = historian.enrich_issues_with_lifecycle(issues, city_name=city_name)
-            resolved_history = get_historian().get_resolved_history(city_name)
     ranked = rank_issues_for_queue(enrich_issues(issues))
     return {
         "ok": True,
         "issues": ranked,
         "count": len(ranked),
         "blocking_count": report["blocking_count"],
-        "resolved_history": resolved_history,
     }
 
 
@@ -290,7 +276,7 @@ def api_suggestions() -> dict[str, Any]:
 
 
 def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
-    cfg = load_config()
+    cfg = load_config_cached()
     export_path = cfg.resolved_export_path()
     if not export_path.is_file():
         return {
@@ -298,7 +284,7 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
             "error": "No city export yet",
             "hint": "Load a city in CS2 with the Data Export mod enabled.",
         }
-    snapshot, err = load_snapshot_safe(export_path)
+    snapshot, err = load_export_cached(export_path)
     if snapshot is None:
         return {
             "ok": False,
@@ -337,29 +323,7 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         headline_metrics=metrics,
     )
     forecasts = build_forecasts(hist)
-    digest = historian.session_digest(history=hist)
-    briefing = build_mayors_briefing(
-        snapshot,
-        meta,
-        historian=historian,
-        history=hist,
-        issues=issues,
-    )
-    fix_first = enrich_issues(
-        build_fix_first_playbook(
-            issues=issues,
-            briefing=None,
-            report_card=report_card,
-            forecasts=forecasts,
-        )
-    )
-    city_briefing_card = build_city_briefing_card(
-        digest=digest,
-        resolved=briefing.get("resolved") or [],
-        grade_deltas=briefing.get("grade_deltas") or [],
-        forecasts=forecasts,
-        priorities=fix_first,
-    )
+    priorities = _top_city_priorities(issues)
     return {
         "ok": True,
         "meta": meta_to_dict(meta),
@@ -368,11 +332,7 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         "brief": build_city_brief(snapshot, meta),
         "report_card": report_card,
         "forecasts": forecasts,
-        "session_digest": digest,
-        "briefing": briefing,
-        "city_briefing_card": city_briefing_card,
-        "fix_first": fix_first,
-        "grade_history": historian.get_grade_history(city_name, limit=limit),
+        "priorities": priorities,
         "issues": enrich_issues(rank_issues_for_queue(issues)),
         "advisor_style": cfg.advisor_style,
     }
@@ -386,7 +346,7 @@ def api_ask(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
-    cfg = load_config()
+    cfg = load_config_cached()
     question = str(body.get("question", "")).strip()
     limit = _parse_limit(body.get("limit", 5))
     export_path = cfg.resolved_export_path()
@@ -403,7 +363,18 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
         yield _sse_event("error", {"error": "Question is required."})
         return
 
-    snapshot, err = load_snapshot_safe(export_path)
+    if bool(body.get("use_llm", True)) and resolve_llm_settings(cfg) is None:
+        yield _sse_event(
+            "error",
+            {
+                "error": "No LLM API key found",
+                "hint": "Add a free Mistral (or OpenAI) key in Settings → AI answers. "
+                "Dashboard, Insights, and Issues work without a key.",
+            },
+        )
+        return
+
+    snapshot, err = load_export_cached(export_path)
     if snapshot is None:
         yield _sse_event(
             "error",
@@ -415,15 +386,26 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
         )
         return
 
+    intent = classify_ask_intent(question)
+    retrieve = needs_knowledge_retrieval(intent)
     try:
         meta = snapshot_meta(snapshot, path=export_path)
         brief = build_city_brief(snapshot, meta)
-        bundle, sources = build_ask_bundle_and_sources(snapshot, meta, question, limit=limit)
+        bundle, sources = build_ask_bundle_and_sources(
+            snapshot,
+            meta,
+            question,
+            limit=limit,
+            retrieve=retrieve,
+        )
     except Exception as exc:  # noqa: BLE001 - surface to SSE client
         yield _sse_event("error", {"error": str(exc)})
         return
 
-    yield _sse_event("meta", {"question": question, "meta": meta_to_dict(meta)})
+    yield _sse_event(
+        "meta",
+        {"question": question, "meta": meta_to_dict(meta), "intent": intent},
+    )
     yield _sse_event("sources", {"sources": sources})
     yield _sse_event("bundle", {"bundle": bundle})
 
@@ -431,11 +413,12 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
         yield _sse_event("done", {"mode": "bundle"})
         return
 
-    cfg = load_config()
     if "agentic" in body:
         agentic = bool(body.get("agentic"))
     else:
         agentic = cfg.llm_agentic_enabled
+    # Non-gameplay routes stay single-shot (prompt already covers app/setup/classification).
+    agentic = bool(agentic and intent == "gameplay")
     try:
         if agentic:
             conv = get_conversation()
@@ -503,7 +486,7 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
             conv.add_turn("assistant", answer, sources=sources)
             yield _sse_event("done", {"mode": "llm", "agentic": False})
     except RuntimeError as exc:
-        yield _sse_event("error", {"error": str(exc), "mode": "bundle", "bundle": bundle})
+        yield _sse_event("error", {"error": str(exc)})
     except Exception as exc:  # noqa: BLE001 - surface to SSE client
         yield _sse_event("error", {"error": str(exc)})
 
@@ -627,34 +610,49 @@ def api_feedback_answer(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def api_briefing() -> dict[str, Any]:
-    cfg = load_config()
+    cfg = load_config_cached()
     export_path = cfg.resolved_export_path()
     if not export_path.is_file():
         return {"ok": False, "error": "No city export yet"}
-    snapshot, err = load_snapshot_safe(export_path)
+    snapshot, err = load_export_cached(export_path)
     if snapshot is None:
         return {"ok": False, "error": err or "Unreadable export"}
     meta = snapshot_meta(snapshot, path=export_path)
     historian = get_historian()
     historian.sync(export_path)
+    history = historian.get_history(export_path=export_path)
     issues = detect_city_issues(snapshot)
     city_name = _sync_city_state(snapshot, meta, issues)
     issues = historian.enrich_issues_with_lifecycle(issues, city_name=city_name)
+    report_card = build_report_card(
+        snapshot,
+        meta,
+        previous_domain_scores=historian.previous_session_report_scores(
+            str(history.get("city_name") or ""),
+            history=history,
+        ),
+    )
+    forecasts = build_forecasts(history)
+    digest = historian.session_digest(history=history)
     briefing = build_mayors_briefing(
         snapshot,
         meta,
         historian=historian,
+        history=history,
         issues=issues,
+        report_card=report_card,
+        forecasts=forecasts,
+        digest=digest,
     )
     return {"ok": True, "briefing": briefing}
 
 
 def api_insights() -> dict[str, Any]:
-    cfg = load_config()
+    cfg = load_config_cached()
     export_path = cfg.resolved_export_path()
     if not export_path.is_file():
         return {"ok": False, "error": "No city export yet"}
-    snapshot, err = load_snapshot_safe(export_path)
+    snapshot, err = load_export_cached(export_path)
     if snapshot is None:
         return {"ok": False, "error": err or "Unreadable export"}
     meta = snapshot_meta(snapshot, path=export_path)
@@ -702,11 +700,11 @@ def api_clear_chat(_body: dict[str, Any] | None = None) -> dict[str, Any]:
 
 def api_export_report(body: dict[str, Any] | None = None) -> dict[str, Any]:
     body = body or {}
-    cfg = load_config()
+    cfg = load_config_cached()
     export_path = cfg.resolved_export_path()
     if not export_path.is_file():
         return {"ok": False, "error": "No city export yet"}
-    snapshot, err = load_snapshot_safe(export_path)
+    snapshot, err = load_export_cached(export_path)
     if snapshot is None:
         return {"ok": False, "error": err or "Unreadable export"}
     meta = snapshot_meta(snapshot, path=export_path)
