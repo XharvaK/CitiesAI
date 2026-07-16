@@ -92,13 +92,14 @@ def ask_stream(
     on_event: Callable[[str, dict[str, Any]], None],
     should_abort: Callable[[], bool] | None = None,
     use_llm: bool = True,
-    agentic: bool = True,
+    agentic: bool | None = None,
 ) -> None:
     """POST /api/ask/stream and invoke on_event for each SSE event until done/error/abort."""
     url = f"{base_url.rstrip('/')}/api/ask/stream"
-    body = json.dumps(
-        {"question": question, "use_llm": use_llm, "agentic": agentic}
-    ).encode("utf-8")
+    payload: dict[str, Any] = {"question": question, "use_llm": use_llm}
+    if agentic is not None:
+        payload["agentic"] = agentic
+    body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url,
         data=body,

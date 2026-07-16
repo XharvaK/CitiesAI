@@ -17,14 +17,17 @@ def build_and_persist_report_card(
     *,
     historian: CityHistorian | None = None,
     headline_metrics: dict[str, Any] | None = None,
+    history: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     hist = historian or get_historian()
     export_path = meta.path
     hist.sync(export_path, force=False)
     city_name = resolve_city_display_name(snapshot, meta)
-    history = hist.get_history(city_name, export_path=export_path, limit=HISTORY_MAX_POINTS)
-    prev_scores = hist.previous_session_report_scores(city_name, history=history)
-    treasury_series = history.get("series", {}).get("treasury")
+    hist_data = history or hist.get_history(
+        city_name, export_path=export_path, limit=HISTORY_MAX_POINTS
+    )
+    prev_scores = hist.previous_session_report_scores(city_name, history=hist_data)
+    treasury_series = hist_data.get("series", {}).get("treasury")
     card = build_report_card(
         snapshot,
         meta,

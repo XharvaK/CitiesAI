@@ -93,6 +93,13 @@ def retrieve_knowledge(query: str, *, limit: int = 5) -> KnowledgeBundle:
     )
 
 
+def search_encyclopedia_only(query: str, *, limit: int = 5) -> list[JsonDict]:
+    encyclopedia = _encyclopedia()
+    if not encyclopedia.available:
+        return []
+    return list(encyclopedia.search(query, limit=limit))
+
+
 def format_knowledge_bundle(bundle: KnowledgeBundle, query: str) -> str:
     lines = [f"## Knowledge retrieval: `{query}`", ""]
     lines.append(f"- wiki: {bundle.wiki_status}")

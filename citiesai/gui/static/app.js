@@ -2012,14 +2012,21 @@ function renderTransitGroup(group) {
   </li>`;
 }
 
+let lastInsightsExportedAt = null;
+
 async function loadInsights(options = {}) {
   const silent = Boolean(options.silent);
   const root = $("insights-content");
-    if (!silent) {
+  if (!silent) {
     root.innerHTML = `<div class="skeleton"></div>`.repeat(3);
   }
   try {
     const data = await fetchJson("/api/insights");
+    const exportedAt = data.meta?.exported_at_utc || data.report_card?.exported_at_utc || null;
+    if (silent && exportedAt && exportedAt === lastInsightsExportedAt) {
+      return;
+    }
+    lastInsightsExportedAt = exportedAt;
     if (!data.ok) {
       root.innerHTML = `<p class="muted">${escapeHtml(data.error || "No insights yet")}</p>`;
       return;

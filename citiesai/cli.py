@@ -95,7 +95,7 @@ def _cmd_ask(args: argparse.Namespace) -> int:
         use_llm=not args.no_llm,
         limit=args.limit,
         export_path=(args.export or load_config().resolved_export_path()).expanduser(),
-        agentic=not args.no_agentic,
+        agentic=False if args.no_agentic else None,
         write_advice_file=args.write_advice,
     )
     if not result.get("ok"):

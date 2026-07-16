@@ -3,12 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .cache import load_export_cached
 from .config import CitiesAIConfig, config_path, load_config
 from .discovery import discover_paths
 from .env_store import api_key_suffix, read_env_var
 from .knowledge import knowledge_status
 from .llm import resolve_llm_settings
-from .snapshot import load_snapshot_safe, snapshot_meta
+from .snapshot import snapshot_meta
 
 
 def _path_entry(label: str, path: Path | None, *, must_exist: bool) -> dict[str, Any]:
@@ -43,7 +44,7 @@ def collect_status_report(cfg: CitiesAIConfig | None = None) -> dict[str, Any]:
 
     export_block: dict[str, Any] | None = None
     if export_path.is_file():
-        snapshot, export_err = load_snapshot_safe(export_path)
+        snapshot, export_err = load_export_cached(export_path)
         if snapshot is None:
             export_block = {"corrupt": True, "error": export_err}
             issues += 1

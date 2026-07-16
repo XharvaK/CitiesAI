@@ -1,6 +1,6 @@
 # CS2 Data Export schema 2.11 — proposal
 
-Status: **implemented** in CitiesAI 0.6 (vendored mod schema `2.11.0`). Healthcare/fire/police coverage fields remain optional until ECS probes land.
+Status: **superseded by schema `2.12.0`** (implemented as `2.11.0` in CitiesAI 0.6; runtime now stamps `2.12.0`). Healthcare/fire/police coverage fields remain optional until ECS probes land.
 
 ## Goals
 

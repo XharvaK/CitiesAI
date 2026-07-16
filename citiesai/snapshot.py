@@ -28,14 +28,20 @@ def pick_group(snapshot: JsonDict, group: str) -> JsonDict:
     return value if isinstance(value, dict) else {}
 
 
+def parse_snapshot_root(raw: object) -> JsonDict:
+    if not isinstance(raw, dict):
+        raise TypeError(f"snapshot root must be a JSON object, got {type(raw).__name__}")
+    return raw
+
+
 def load_snapshot(path: Path) -> JsonDict:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return parse_snapshot_root(json.loads(path.read_text(encoding="utf-8")))
 
 
 def load_snapshot_safe(path: Path) -> tuple[JsonDict | None, str | None]:
     try:
         return load_snapshot(path), None
-    except (json.JSONDecodeError, OSError, UnicodeError) as exc:
+    except (json.JSONDecodeError, OSError, UnicodeError, TypeError) as exc:
         return None, str(exc)
 
 

@@ -49,3 +49,23 @@ def test_advisor_style_and_watch_persist(tmp_path: Path, monkeypatch) -> None:
     text = cfg_path.read_text(encoding="utf-8")
     assert 'advisor_style = "analyst"' in text
     assert "watch_enabled = true" in text
+
+
+def test_string_false_does_not_enable_agentic(tmp_path: Path, monkeypatch) -> None:
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        '[llm]\nagentic = "false"\n\n[ui]\nwatch_enabled = "true"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("citiesai.config.config_path", lambda: cfg_path)
+    cfg = load_config()
+    assert cfg.llm_agentic_enabled is True  # default preserved
+    assert cfg.watch_enabled is False  # default preserved
+
+
+def test_toml_bool_false_disables_agentic(tmp_path: Path, monkeypatch) -> None:
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text("[llm]\nagentic = false\n", encoding="utf-8")
+    monkeypatch.setattr("citiesai.config.config_path", lambda: cfg_path)
+    cfg = load_config()
+    assert cfg.llm_agentic_enabled is False

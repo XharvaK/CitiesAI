@@ -23,8 +23,8 @@ citiesai ask "question" --no-llm
 
 ## Workflow
 
-1. Confirm export exists (`citiesai doctor`). If missing, user must load a city with CS2 Data Export installed.
-2. Read snapshot or run `citiesai context -q "..."`. Note `ExportedAtUtc`. Stale if older than ~30 seconds (`STALE_AFTER_SECONDS`).
+1. Confirm toolchain: `citiesai doctor` checks paths/mod/export parseable/knowledge — not city health or freshness. If export is missing, user must load a city with CS2 Data Export installed.
+2. Read snapshot or run `citiesai context -q "..."`. Note `ExportedAtUtc`. Stale if older than ~30 seconds (`STALE_AFTER_SECONDS`). City pressures live in Issues/Insights, not doctor exit 0.
 3. Ground advice in city metrics first (treasury, income/expense, population, wellbeing, crime, congestion, transit).
 4. Retrieve knowledge via Cities2-MCP with compact keyword queries (4–10 terms), derived from question + snapshot signals.
 5. Synthesize one actionable answer with sources.

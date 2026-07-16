@@ -21,7 +21,6 @@ from ..ask_core import (
     meta_to_dict,
     needs_knowledge_retrieval,
     prepare_agentic_ask,
-    run_ask,
 )
 from ..briefing import build_mayors_briefing
 from ..cache import load_config_cached, load_export_cached
@@ -93,10 +92,21 @@ def _top_city_priorities(issues: list[dict[str, Any]], *, limit: int = 3) -> lis
 
 
 def api_hud() -> dict[str, Any]:
+    global _hud_cache
     try:
-        snapshot, meta, _export_path = _load_live_export()
+        snapshot, meta, export_path = _load_live_export()
     except RuntimeError as exc:
         return {"ok": False, "error": str(exc)}
+    cfg = load_config_cached()
+    mtime = _export_mtime(export_path)
+    cache_key = (str(export_path.resolve()), mtime, cfg.advisor_style)
+    if (
+        _hud_cache
+        and _hud_cache.get("key") == cache_key
+        and _hud_cache.get("payload", {}).get("ok")
+    ):
+        return _refresh_meta_age(_hud_cache["payload"], meta)
+
     historian = get_historian()
     history = historian.get_history(export_path=meta.path)
     report_card = build_report_card(
@@ -113,7 +123,7 @@ def api_hud() -> dict[str, Any]:
     top_priority = priorities[0] if priorities else None
     age_seconds = meta.age_seconds if meta.age_seconds is not None else 0
     stale = age_seconds > STALE_AFTER_SECONDS
-    return {
+    payload = {
         "ok": True,
         "meta": {
             **meta_to_dict(meta),
@@ -126,8 +136,10 @@ def api_hud() -> dict[str, Any]:
         },
         "top_priority": enrich_issue_advisor(top_priority) if top_priority else None,
         "priorities": priorities,
-        "advisor_style": load_config_cached().advisor_style,
+        "advisor_style": cfg.advisor_style,
     }
+    _hud_cache = {"key": cache_key, "payload": payload}
+    return payload
 
 
 def api_version() -> dict[str, Any]:
@@ -174,6 +186,7 @@ def _status_with_issues() -> dict[str, Any]:
     issues = collect_issues(report, metrics)
     blocking = blocking_issue_count(issues)
     report["issues"] = issues
+    report["metrics"] = metrics
     report["blocking_count"] = blocking
     report["issue_count"] = blocking
     report["ok"] = blocking == 0
@@ -206,11 +219,12 @@ def _append_anomaly_issues(
     city_name: str,
     export_path: Path,
     historian: Any | None = None,
+    history: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     hist = historian or get_historian()
     existing = {str(issue.get("id")) for issue in issues}
     merged = list(issues)
-    for row in hist.detect_anomalies(city_name, export_path=export_path):
+    for row in hist.detect_anomalies(city_name, export_path=export_path, history=history):
         issue_id = str(row.get("id") or "")
         if not issue_id or issue_id in existing:
             continue
@@ -260,9 +274,11 @@ def api_issues() -> dict[str, Any]:
 def api_suggestions() -> dict[str, Any]:
     status = _status_with_issues()
     issues = status["issues"]
-    metrics = _metrics_for_status()
+    metrics = status.get("metrics")
+    if metrics is None:
+        metrics = _metrics_for_status()
     llm = status.get("llm") or {}
-    cfg = load_config()
+    cfg = load_config_cached()
     return {
         "ok": True,
         "suggestions": build_ask_suggestions(
@@ -275,7 +291,26 @@ def api_suggestions() -> dict[str, Any]:
     }
 
 
+_dashboard_cache: dict[str, Any] | None = None
+_hud_cache: dict[str, Any] | None = None
+
+
+def _export_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime if path.is_file() else 0.0
+    except OSError:
+        return 0.0
+
+
+def _refresh_meta_age(payload: dict[str, Any], meta: Any) -> dict[str, Any]:
+    meta_dict = dict(payload.get("meta") or {})
+    meta_dict.update(meta_to_dict(meta))
+    payload = {**payload, "meta": meta_dict}
+    return payload
+
+
 def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
+    global _dashboard_cache
     cfg = load_config_cached()
     export_path = cfg.resolved_export_path()
     if not export_path.is_file():
@@ -284,6 +319,18 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
             "error": "No city export yet",
             "hint": "Load a city in CS2 with the Data Export mod enabled.",
         }
+    mtime = _export_mtime(export_path)
+    cache_key = (str(export_path.resolve()), mtime, limit, cfg.advisor_style)
+    if (
+        _dashboard_cache
+        and _dashboard_cache.get("key") == cache_key
+        and _dashboard_cache.get("payload", {}).get("ok")
+    ):
+        snapshot, _err = load_export_cached(export_path)
+        if snapshot is not None:
+            meta = snapshot_meta(snapshot, path=export_path)
+            return _refresh_meta_age(_dashboard_cache["payload"], meta)
+
     snapshot, err = load_export_cached(export_path)
     if snapshot is None:
         return {
@@ -309,6 +356,7 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         city_name=city_name,
         export_path=export_path,
         historian=historian,
+        history=hist,
     )
     issues = historian.enrich_issues_with_lifecycle(issues, city_name=city_name)
     metrics = fill_official_metric_gaps(
@@ -321,10 +369,11 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         meta,
         historian=historian,
         headline_metrics=metrics,
+        history=hist,
     )
     forecasts = build_forecasts(hist)
     priorities = _top_city_priorities(issues)
-    return {
+    payload = {
         "ok": True,
         "meta": meta_to_dict(meta),
         "metrics": metrics,
@@ -336,13 +385,8 @@ def api_dashboard(*, limit: int = HISTORY_MAX_POINTS) -> dict[str, Any]:
         "issues": enrich_issues(rank_issues_for_queue(issues)),
         "advisor_style": cfg.advisor_style,
     }
-
-
-def api_ask(body: dict[str, Any]) -> dict[str, Any]:
-    question = str(body.get("question", "")).strip()
-    use_llm = bool(body.get("use_llm", True))
-    limit = _parse_limit(body.get("limit", 5))
-    return run_ask(question, use_llm=use_llm, limit=limit)
+    _dashboard_cache = {"key": cache_key, "payload": payload}
+    return payload
 
 
 def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
@@ -397,6 +441,7 @@ def api_ask_stream(body: dict[str, Any]) -> Iterator[str]:
             question,
             limit=limit,
             retrieve=retrieve,
+            brief=brief,
         )
     except Exception as exc:  # noqa: BLE001 - surface to SSE client
         yield _sse_event("error", {"error": str(exc)})
@@ -661,6 +706,7 @@ def api_insights() -> dict[str, Any]:
     city_name = resolve_city_display_name(snapshot, meta)
     return {
         "ok": True,
+        "meta": meta_to_dict(meta),
         "report_card": build_and_persist_report_card(snapshot, meta, historian=historian),
         "transit": analyze_transit_lines(snapshot),
         "access_gaps": analyze_access_gaps(snapshot),

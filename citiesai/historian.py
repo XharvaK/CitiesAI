@@ -11,11 +11,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .cache import load_export_cached
 from .city_name import resolve_city_display_name
 from .config import config_dir, load_config
 from .constants import EXPORT_INTERVAL_SECONDS, HISTORY_MAX_POINTS
 from .dashboard import extract_headline_metrics
-from .snapshot import load_snapshot_safe, snapshot_meta
+from .snapshot import snapshot_meta
 
 _HISTORY_METRIC_KEYS = (
     "population",
@@ -138,6 +139,7 @@ class CityHistorian:
         self._lock = threading.Lock()
         self._last_sync_at: float = 0.0
         self._pending_force_sync = False
+        self._tracked_issues_fp: dict[str, frozenset[tuple[str, str]]] = {}
         self._ensure_schema()
         self._migrate_metrics_schema()
 
@@ -199,7 +201,7 @@ class CityHistorian:
         if ingested_mtimes.get(path_key) == mtime:
             return False
 
-        snapshot, _ = load_snapshot_safe(path)
+        snapshot, _ = load_export_cached(path)
         if snapshot is None:
             return False
 
@@ -306,7 +308,7 @@ class CityHistorian:
         export_path: Path | None = None,
     ) -> dict[str, Any]:
         path = (export_path or load_config().resolved_export_path()).expanduser()
-        snapshot, _ = load_snapshot_safe(path) if path.is_file() else (None, None)
+        snapshot, _ = load_export_cached(path) if path.is_file() else (None, None)
         name = city_name or self._resolve_city_name(snapshot, path)
 
         with self._connect() as conn:
@@ -355,6 +357,12 @@ class CityHistorian:
             for issue in issues
             if issue.get("kind") == "city" and issue.get("id")
         }
+        fingerprint = frozenset(
+            (issue_id, str(issue.get("severity") or "info"))
+            for issue_id, issue in city_issues.items()
+        )
+        if self._tracked_issues_fp.get(city_name) == fingerprint:
+            return
         active_ids = set(city_issues)
         with self._lock, self._connect() as conn:
             city_id = self._city_id(conn, city_name)
@@ -418,6 +426,7 @@ class CityHistorian:
                     ),
                 )
             conn.commit()
+        self._tracked_issues_fp[city_name] = fingerprint
 
     def enrich_issues_with_lifecycle(
         self,

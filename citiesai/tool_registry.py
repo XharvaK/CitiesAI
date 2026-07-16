@@ -17,7 +17,7 @@ from .city_issues import detect_city_issues
 from .constants import HISTORY_MAX_POINTS
 from .forecasts import build_forecasts
 from .historian import get_historian
-from .knowledge import format_knowledge_bundle, retrieve_knowledge
+from .knowledge import format_knowledge_bundle, retrieve_knowledge, search_encyclopedia_only
 from .report_ops import build_and_persist_report_card
 from .snapshot import pick_group, snapshot_meta
 from .summary import build_city_brief
@@ -36,33 +36,82 @@ def _json_result(payload: Any, *, limit: int = 8000) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)[:limit]
 
 
+def parse_tool_arguments(raw: object) -> dict[str, Any] | str:
+    """Parse LLM/MCP tool arguments. Returns a dict or an error string."""
+    if isinstance(raw, dict):
+        return raw
+    if raw is None:
+        return {}
+    if not isinstance(raw, str):
+        return f"error: tool arguments must be a JSON object, got {type(raw).__name__}"
+    text = raw.strip() or "{}"
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        return f"error: invalid JSON arguments: {exc}"
+    if not isinstance(parsed, dict):
+        return f"error: tool arguments must be a JSON object, got {type(parsed).__name__}"
+    return parsed
+
+
+def _coerce_limit(args: dict[str, Any], *, default: int = 5, minimum: int = 1, maximum: int = 10) -> int | str:
+    raw = args.get("limit", default)
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return f"error: limit must be an integer, got {raw!r}"
+    return max(minimum, min(maximum, value))
+
+
+def _require_string_arg(args: dict[str, Any], key: str) -> str | None:
+    value = str(args.get(key, "")).strip()
+    if not value:
+        return f"error: missing required argument '{key}'"
+    return None
+
+
 def _metric_group(args: dict[str, Any], snapshot: dict[str, Any], _meta: Any) -> str:
-    group = str(args.get("group", ""))
+    missing = _require_string_arg(args, "group")
+    if missing:
+        return _json_result({"error": missing.removeprefix("error: ").strip()})
+    group = str(args.get("group", "")).strip()
     return _json_result(pick_group(snapshot, group))
 
 
 def _search_wiki(args: dict[str, Any], _snapshot: dict[str, Any], _meta: Any) -> str:
+    missing = _require_string_arg(args, "query")
+    if missing:
+        return missing
+    limit = _coerce_limit(args)
+    if isinstance(limit, str):
+        return limit
     query = str(args.get("query", "")).strip()
-    limit = int(args.get("limit", 5))
     bundle = retrieve_knowledge(query, limit=limit)
     return format_knowledge_bundle(bundle, query)[:6000]
 
 
 def _search_encyclopedia(args: dict[str, Any], _snapshot: dict[str, Any], _meta: Any) -> str:
+    missing = _require_string_arg(args, "query")
+    if missing:
+        return missing
+    limit = _coerce_limit(args)
+    if isinstance(limit, str):
+        return limit
     query = str(args.get("query", "")).strip()
-    limit = int(args.get("limit", 5))
-    bundle = retrieve_knowledge(query, limit=limit)
-    if bundle.encyclopedia_hits:
-        lines = [
-            f"- {hit.get('title', 'entry')}: {str(hit.get('snippet', ''))[:300]}"
-            for hit in bundle.encyclopedia_hits[:limit]
-        ]
-        return "\n".join(lines)
-    return "Encyclopedia unavailable or no hits."
+    hits = search_encyclopedia_only(query, limit=limit)
+    if not hits:
+        return "Encyclopedia unavailable or no hits."
+    lines = [
+        f"- {hit.get('title', 'entry')}: {str(hit.get('snippet', ''))[:300]}"
+        for hit in hits[:limit]
+    ]
+    return "\n".join(lines)
 
 
 def _city_history(args: dict[str, Any], _snapshot: dict[str, Any], _meta: Any) -> str:
-    limit = int(args.get("limit", 20))
+    limit = _coerce_limit(args, default=20, minimum=1, maximum=HISTORY_MAX_POINTS)
+    if isinstance(limit, str):
+        return limit
     historian = get_historian()
     historian.sync(force=True)
     history = historian.get_history(limit=limit)
@@ -101,8 +150,9 @@ def _detect_issues(_args: dict[str, Any], snapshot: dict[str, Any], _meta: Any) 
 
 
 def _history(args: dict[str, Any], _snapshot: dict[str, Any], _meta: Any) -> str:
-    limit = int(args.get("limit", 50))
-    limit = max(2, min(limit, HISTORY_MAX_POINTS))
+    limit = _coerce_limit(args, default=50, minimum=2, maximum=HISTORY_MAX_POINTS)
+    if isinstance(limit, str):
+        return limit
     historian = get_historian()
     historian.sync()
     return _json_result(historian.get_history(limit=limit))
@@ -294,6 +344,10 @@ def execute_registered_tool(
     spec = TOOL_BY_NAME.get(name)
     if spec is None:
         return _json_result({"error": f"Unknown tool: {name}"})
+    required = list(spec.parameters.get("required") or [])
+    for key in required:
+        if not str(arguments.get(key, "")).strip():
+            return _json_result({"error": f"missing required argument '{key}'"})
     if meta is None:
         meta = snapshot_meta(snapshot, path=Path("latest.json"))
     return spec.handler(arguments, snapshot, meta)

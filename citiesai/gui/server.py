@@ -70,7 +70,7 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 CS2_WATCH_INTERVAL_S = 4.0
 CS2_GONE_POLLS_REQUIRED = 2
-COMAYOR_LIVE_POLL_S = 2.0
+COMAYOR_LIVE_POLL_S = 10.0
 
 WindowMode = Literal["native", "browser", "none"]
 
@@ -325,7 +325,9 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             data = json.loads(raw.decode("utf-8"))
         except json.JSONDecodeError as exc:
             raise ValueError(f"Invalid JSON body: {exc}") from exc
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            raise ValueError("JSON body must be an object")
+        return data
 
     def _send_bytes(self, code: int, body: bytes, content_type: str) -> None:
         self.send_response(code)
@@ -391,7 +393,6 @@ class CitiesAIHandler(BaseHTTPRequestHandler):
             "/api/suggestions": api_suggestions,
             "/api/setup": api_setup_preview,
             "/api/comayor": api_comayor_status,
-            "/api/settings/key/test": api_test_key,
             "/api/settings/llm-presets": api_llm_presets,
             "/api/watch": api_watch_status,
             "/api/update/check": lambda: api_update_check(

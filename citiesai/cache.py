@@ -6,27 +6,33 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .config import CitiesAIConfig
+from .config import CitiesAIConfig, config_path
 from .config import load_config as _load_config_uncached
+from .env_store import env_file_path
 from .snapshot import load_snapshot_safe
 
 _lock = threading.Lock()
-_config_cache: tuple[float, CitiesAIConfig] | None = None
+_config_cache: tuple[tuple[float, float], CitiesAIConfig] | None = None
 _export_cache: dict[str, tuple[float, dict[str, Any] | None, str | None]] = {}
+
+
+def _config_mtimes() -> tuple[float, float]:
+    cfg_path = config_path()
+    env_path = env_file_path()
+    cfg_mtime = cfg_path.stat().st_mtime if cfg_path.is_file() else 0.0
+    env_mtime = env_path.stat().st_mtime if env_path.is_file() else 0.0
+    return (cfg_mtime, env_mtime)
 
 
 def load_config_cached() -> CitiesAIConfig:
     global _config_cache
-    from .config import config_path
-
-    cfg_path = config_path()
-    mtime = cfg_path.stat().st_mtime if cfg_path.is_file() else 0.0
+    mtimes = _config_mtimes()
     with _lock:
-        if _config_cache and _config_cache[0] == mtime:
+        if _config_cache and _config_cache[0] == mtimes:
             return _config_cache[1]
     cfg = _load_config_uncached()
     with _lock:
-        _config_cache = (mtime, cfg)
+        _config_cache = (mtimes, cfg)
     return cfg
 
 

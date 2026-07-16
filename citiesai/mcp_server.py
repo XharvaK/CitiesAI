@@ -8,7 +8,7 @@ from typing import Any
 
 from .config import apply_config_to_env, load_config
 from .snapshot import load_snapshot_safe, snapshot_meta
-from .tool_registry import execute_registered_tool, mcp_tool_definitions
+from .tool_registry import execute_registered_tool, mcp_tool_definitions, parse_tool_arguments
 from .version import __version__
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -65,10 +65,18 @@ def _handle_request(request: dict[str, Any]) -> dict[str, Any] | None:
     if method == "tools/call":
         name = str(params.get("name", ""))
         arguments = params.get("arguments") or {}
-        if not isinstance(arguments, dict):
-            arguments = {}
+        parsed = parse_tool_arguments(arguments)
+        if isinstance(parsed, str):
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": parsed}],
+                    "isError": True,
+                },
+            }
         try:
-            text = _call_tool(name, arguments)
+            text = _call_tool(name, parsed)
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,

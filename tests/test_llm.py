@@ -56,6 +56,12 @@ def test_build_system_prompt_hardened() -> None:
     agentic = build_system_prompt(agentic=True)
     assert f"CitiesAI v{__version__}" in agentic
     assert "fetch metric groups" in agentic
+    assert "at most 8 tool rounds" in agentic
+
+    agentic_custom = build_system_prompt(agentic=True, tool_rounds=3)
+    assert "at most 3 tool rounds" in agentic_custom
+    assert "at most 2 tool rounds" not in agentic_custom
+    assert "at most 2 tool rounds" not in agentic
 
 
 def test_build_system_prompt_advisor_styles_change_tone_only() -> None:

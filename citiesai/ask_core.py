@@ -184,8 +184,10 @@ def build_ask_bundle_and_sources(
     *,
     limit: int = 5,
     retrieve: bool = True,
+    brief: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
-    parts: list[str] = [build_city_brief(snapshot, meta), "", f"## Question\n{question}\n"]
+    city_brief = brief if brief is not None else build_city_brief(snapshot, meta)
+    parts: list[str] = [city_brief, "", f"## Question\n{question}\n"]
     if not retrieve:
         return "\n".join(parts), []
     queries = build_search_queries(snapshot, question)
@@ -226,17 +228,6 @@ def build_ask_bundle_and_sources(
     return "\n".join(parts), sources[:20]
 
 
-def build_ask_bundle(
-    snapshot: dict[str, Any],
-    meta: SnapshotMeta,
-    question: str,
-    *,
-    limit: int = 5,
-) -> str:
-    bundle, _sources = build_ask_bundle_and_sources(snapshot, meta, question, limit=limit)
-    return bundle
-
-
 def run_ask(
     question: str,
     *,
@@ -244,11 +235,13 @@ def run_ask(
     limit: int = 5,
     export_path: Path | None = None,
     cfg: CitiesAIConfig | None = None,
-    agentic: bool = True,
+    agentic: bool | None = None,
     multi_turn: bool = True,
     write_advice_file: bool = False,
 ) -> dict[str, Any]:
     cfg = cfg or load_config()
+    if agentic is None:
+        agentic = bool(cfg.llm_agentic_enabled)
     path = (export_path or cfg.resolved_export_path()).expanduser()
     if not path.is_file():
         return {
@@ -278,6 +271,7 @@ def run_ask(
         question,
         limit=limit,
         retrieve=retrieve,
+        brief=brief,
     )
 
     conv = get_conversation()
@@ -346,5 +340,5 @@ def run_ask(
 
     payload["mode"] = "llm"
     payload["answer"] = answer
-    payload["agentic"] = agentic
+    payload["agentic"] = use_agentic
     return payload

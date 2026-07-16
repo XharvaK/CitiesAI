@@ -522,7 +522,7 @@
             "Content-Type": "application/json",
             "X-CitiesAI-Token": sessionToken(),
           },
-          body: JSON.stringify({ question, use_llm: true, agentic: true }),
+          body: JSON.stringify({ question, use_llm: true }),
           signal: controller.signal,
         });
         if (!response.ok) {

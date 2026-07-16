@@ -171,6 +171,19 @@ def _escape_toml(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _toml_table(data: dict[str, Any], key: str) -> dict[str, Any]:
+    value = data.get(key, {})
+    return value if isinstance(value, dict) else {}
+
+
+def _strict_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value in (0, 1) and not isinstance(value, bool):
+        return bool(value)
+    return None
+
+
 def load_config() -> CitiesAIConfig:
     load_env_file()
     discovered = discover_paths()
@@ -185,10 +198,13 @@ def load_config() -> CitiesAIConfig:
         return cfg
 
     data = tomllib.loads(path.read_text(encoding="utf-8"))
-    paths = data.get("paths", {})
-    llm = data.get("llm", {})
-    app = data.get("app", {})
-    updates = data.get("updates", {})
+    if not isinstance(data, dict):
+        return cfg
+    paths = _toml_table(data, "paths")
+    llm = _toml_table(data, "llm")
+    app = _toml_table(data, "app")
+    updates = _toml_table(data, "updates")
+    ui = _toml_table(data, "ui")
 
     if paths.get("game_dir"):
         cfg.game_dir = Path(str(paths["game_dir"]))
@@ -211,25 +227,34 @@ def load_config() -> CitiesAIConfig:
         except (TypeError, ValueError):
             pass
     if "agentic" in llm:
-        cfg.llm_agentic_enabled = bool(llm["agentic"])
+        parsed = _strict_bool(llm["agentic"])
+        if parsed is not None:
+            cfg.llm_agentic_enabled = parsed
 
     if cfg.llm_model == LEGACY_LLM_MODEL:
         cfg.llm_model = DEFAULT_LLM_MODEL
         cfg.write()
 
     if "onboarding_complete" in app:
-        cfg.onboarding_complete = bool(app["onboarding_complete"])
+        parsed = _strict_bool(app["onboarding_complete"])
+        if parsed is not None:
+            cfg.onboarding_complete = parsed
 
-    ui = data.get("ui", {})
     if "comayor_enabled" in ui:
-        cfg.comayor_enabled = bool(ui["comayor_enabled"])
+        parsed = _strict_bool(ui["comayor_enabled"])
+        if parsed is not None:
+            cfg.comayor_enabled = parsed
     if "advisor_style" in ui:
         cfg.advisor_style = normalize_advisor_style(ui.get("advisor_style"))
     if "watch_enabled" in ui:
-        cfg.watch_enabled = bool(ui["watch_enabled"])
+        parsed = _strict_bool(ui["watch_enabled"])
+        if parsed is not None:
+            cfg.watch_enabled = parsed
 
     if "check_on_startup" in updates:
-        cfg.check_updates_on_startup = bool(updates["check_on_startup"])
+        parsed = _strict_bool(updates["check_on_startup"])
+        if parsed is not None:
+            cfg.check_updates_on_startup = parsed
     if updates.get("last_check_utc"):
         cfg.update_last_check_utc = str(updates["last_check_utc"])
     if updates.get("dismissed_version"):

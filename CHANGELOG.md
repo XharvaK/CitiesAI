@@ -2,6 +2,30 @@
 
 All notable changes to CitiesAI are documented here.
 
+## [0.9.1] — 2026-07-16
+
+### Performance
+
+- **CitiesAI app** — fewer duplicate snapshot parses, historian loads, and wiki searches on dashboard / Co-Mayor / Ask hot paths.
+
+### Ask
+
+- **Tighter harness** — Settings Deep research honored by Co-Mayor/CLI; tool-round budget matches the real loop; bad tool args fail closed.
+
+### Reliability
+
+- Corrupt or non-object exports and JSON bodies rejected instead of looking healthy; unauthenticated GET key-test removed.
+
+### Estimated impact
+
+- Roughly **~60–80% less redundant work per 10s dashboard tick** when the export mtime is unchanged (triple history load → one; mtime short-circuit skips re-brief/analyzers). Ask builds the city brief once and drops unused wiki work from the encyclopedia tool. On top of 0.9.0’s poll tighten — exact CPU depends on city size and whether Insights is open.
+
+### Install
+
+Download **`CitiesAI-Setup-0.9.1.exe`** from [Releases](https://github.com/XharvaK/CitiesAI/releases). Close CS2 before installing so the bundled export mod can update.
+
+---
+
 ## [0.9.0] — 2026-07-16
 
 ### Performance

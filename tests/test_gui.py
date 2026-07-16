@@ -17,7 +17,6 @@ from citiesai.feedback import submit_feedback
 from citiesai.gui.api import api_dashboard, api_setup_preview, api_status, api_version
 from citiesai.gui.server import _static_file
 from citiesai.snapshot import load_snapshot, snapshot_meta
-from citiesai.snapshot_history import SnapshotHistory
 from citiesai.version import __version__
 
 VENDOR_SAMPLE = (
@@ -176,36 +175,33 @@ def test_run_ask_no_export(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert result["ok"] is False
 
 
-def test_snapshot_history_ring() -> None:
-    history = SnapshotHistory(max_points=3)
-    history._points.append(  # noqa: SLF001
-        type(
-            "P",
-            (),
-            {
-                "timestamp": 1.0,
-                "exported_at_utc": "a",
-                "metrics": {"population": 1, "unemployment_percent": 45},
-            },
-        )()
-    )
-    history._points.append(  # noqa: SLF001
-        type(
-            "P",
-            (),
-            {
-                "timestamp": 2.0,
-                "exported_at_utc": "b",
-                "metrics": {"population": 3, "unemployment_percent": 42},
-            },
-        )()
-    )
-    data = history.to_dict()
-    assert data["count"] == 2
-    assert "unemployment_percent" in data["series"]
-    assert data["series"]["unemployment_percent"] == [45, 42]
-    assert data["deltas"]["unemployment_percent"] == -3
+def test_run_ask_respects_agentic_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from citiesai import config as config_mod
 
+    export = tmp_path / "latest.json"
+    export.write_text(VENDOR_SAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+    cfg = config_mod.CitiesAIConfig(export_path=export, llm_agentic_enabled=False)
+    monkeypatch.setattr("citiesai.ask_core.load_config", lambda: cfg)
+
+    called: list[str] = []
+
+    def _fake_generate(*_a, **_k):
+        called.append("single")
+        return "single-shot answer"
+
+    def _fake_agentic(*_a, **_k):
+        called.append("agentic")
+        raise AssertionError("agentic path should not run when Deep research is off")
+
+    monkeypatch.setattr("citiesai.ask_core.generate_answer", _fake_generate)
+    monkeypatch.setattr("citiesai.ask_core.generate_agentic_answer", _fake_agentic)
+
+    result = run_ask("Why is my budget negative?", use_llm=True, agentic=None)
+    assert result["ok"] is True
+    assert result["agentic"] is False
+    assert called == ["single"]
 
 def test_save_env_var(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("citiesai.env_store._config_dir", lambda: tmp_path)

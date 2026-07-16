@@ -10,6 +10,7 @@ from typing import Any
 
 from .agent_tools import TOOL_DEFINITIONS, execute_tool
 from .config import DEFAULT_MAX_TOOL_ROUNDS, CitiesAIConfig, normalize_advisor_style
+from .tool_registry import parse_tool_arguments
 from .version import __version__
 
 
@@ -121,8 +122,10 @@ def build_system_prompt(
     agentic: bool = False,
     force_answer: bool = False,
     advisor_style: str = "civic",
+    tool_rounds: int | None = None,
 ) -> str:
     style = normalize_advisor_style(advisor_style)
+    rounds = max(1, int(tool_rounds or DEFAULT_MAX_TOOL_ROUNDS))
     base = (
         f"You are CitiesAI v{__version__}, the Windows desktop advisor app the user is "
         "running. You advise on Cities: Skylines II using their live city snapshot and "
@@ -191,7 +194,8 @@ def build_system_prompt(
             "\n\nYou have tools to fetch metric groups, search wiki/encyclopedia, "
             "history, and transit lines. Use the city brief and any pre-retrieved "
             "sources first. Call tools only for missing specifics (one metric group, "
-            "transit detail, etc.). Answer after at most 2 tool rounds unless the user "
+            "transit detail, etc.). Answer after at most "
+            f"{rounds} tool rounds unless the user "
             "explicitly asks for exhaustive research."
         )
         if force_answer:
@@ -302,6 +306,7 @@ def _force_final_answer(
     settings: LLMSettings,
     *,
     advisor_style: str = "civic",
+    tool_rounds: int | None = None,
 ) -> str:
     final_messages = list(messages)
     final_messages[0] = {
@@ -310,6 +315,7 @@ def _force_final_answer(
             agentic=True,
             force_answer=True,
             advisor_style=advisor_style,
+            tool_rounds=tool_rounds,
         ),
     }
     message = _complete_chat(final_messages, settings)
@@ -344,10 +350,15 @@ def iter_agentic_answer(
         user_content = "\n\n".join(parts)
 
     style = getattr(cfg, "advisor_style", "civic")
+    rounds = max_tool_rounds(cfg)
     messages: list[dict[str, Any]] = [
         {
             "role": "system",
-            "content": build_system_prompt(agentic=True, advisor_style=style),
+            "content": build_system_prompt(
+                agentic=True,
+                advisor_style=style,
+                tool_rounds=rounds,
+            ),
         },
         {"role": "user", "content": user_content},
     ]
@@ -358,7 +369,6 @@ def iter_agentic_answer(
 
     sources: list[dict[str, Any]] = []
     tool_names: list[str] = []
-    rounds = max_tool_rounds(cfg)
 
     for _ in range(rounds):
         message = _complete_chat(messages, settings, tools=TOOL_DEFINITIONS)
@@ -381,17 +391,15 @@ def iter_agentic_answer(
             fn = call.get("function") or {}
             name = str(fn.get("name", ""))
             raw_args = fn.get("arguments") or "{}"
-            try:
-                args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-            except json.JSONDecodeError:
-                args = {}
-            if not isinstance(args, dict):
-                args = {}
+            parsed = parse_tool_arguments(raw_args)
             tool_names.append(name)
             yield ("status", TOOL_STATUS_MESSAGES.get(name, f"Running {name}…"))
-            if name in ("search_wiki", "search_encyclopedia"):
-                sources.append({"tool": name, "query": args.get("query", "")})
-            result = execute_tool(name, args, snapshot=snapshot)
+            if isinstance(parsed, str):
+                result = parsed
+            else:
+                if name in ("search_wiki", "search_encyclopedia"):
+                    sources.append({"tool": name, "query": parsed.get("query", "")})
+                result = execute_tool(name, parsed, snapshot=snapshot)
             messages.append(
                 {
                     "role": "tool",
@@ -402,7 +410,12 @@ def iter_agentic_answer(
 
     yield ("status", "Wrapping up answer…")
     try:
-        answer = _force_final_answer(messages, settings, advisor_style=style)
+        answer = _force_final_answer(
+            messages,
+            settings,
+            advisor_style=style,
+            tool_rounds=rounds,
+        )
         yield (
             "result",
             AgenticResult(
